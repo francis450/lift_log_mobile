@@ -62,7 +62,60 @@ export interface Profile {
   ai_enabled: boolean;
   reminders: Reminders;
   program: Program | null;
+  /** Keyed by exercise name. Missing on servers older than the M3 backend update. */
+  exercises?: Record<string, ExerciseInfo>;
   exists: boolean;
+}
+
+export interface ExerciseInfo {
+  type: 'load' | 'bodyweight' | 'time' | 'distance';
+  increment_kg: number;
+  form_url: string | null;
+}
+
+export interface Highlight {
+  exercise: string;
+  sets: { kg: number | null; amount: number }[];
+}
+
+export interface MonthSession {
+  date: string;
+  routine_key: string | null;
+  routine_name: string | null;
+  sets: number;
+  status: 'in_progress' | 'done';
+  highlight?: Highlight | null;
+}
+
+export interface FoodMonthDay {
+  date: string;
+  kcal: number;
+  protein_g: number;
+  entries: number;
+  meals: number;
+}
+
+export interface HistoryItem {
+  date: string;
+  week: number | null;
+  routine_key: string | null;
+  routine_name: string | null;
+  status: 'in_progress' | 'done';
+  exercise: string;
+  sets: { set_no: number; kg: number | null; amount: number; effort: 'easy' | 'right' | 'hard' | null; done: boolean }[];
+}
+
+export interface SessionPayload {
+  session_date: string;
+  week: number | null;
+  routine_key: string | null;
+  routine_name: string | null;
+  status: 'in_progress' | 'done';
+  started_at: string | null;
+  finished_at: string | null;
+  note: string;
+  client_updated_at: string;
+  sets: SetEntry[];
 }
 
 export type ProfileUpdate = Partial<{
@@ -134,6 +187,6 @@ export interface TodayResponse {
   last_session: {
     date: string;
     routine_name: string | null;
-    highlight: { exercise: string; sets: { kg: number | null; amount: number }[] } | null;
+    highlight: Highlight | null;
   } | null;
 }

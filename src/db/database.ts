@@ -21,6 +21,12 @@ const MIGRATIONS: string[] = [
      value TEXT NOT NULL,
      updated_at INTEGER NOT NULL
    );`,
+  // M3: the offline workout log. One draft per date, saved on every change.
+  `CREATE TABLE IF NOT EXISTS workouts (
+     date TEXT PRIMARY KEY NOT NULL,
+     draft TEXT NOT NULL,
+     updated_at INTEGER NOT NULL
+   );`,
 ];
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -64,8 +70,28 @@ export async function cacheSet(key: string, value: unknown): Promise<void> {
   );
 }
 
+export async function workoutGet<T>(date: string): Promise<T | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ draft: string }>('SELECT draft FROM workouts WHERE date = ?', [date]);
+  return row ? (JSON.parse(row.draft) as T) : null;
+}
+
+export async function workoutPut(date: string, draft: unknown): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    'INSERT INTO workouts (date, draft, updated_at) VALUES (?, ?, ?) ON CONFLICT(date) DO UPDATE SET draft = excluded.draft, updated_at = excluded.updated_at',
+    [date, JSON.stringify(draft), Date.now()],
+  );
+}
+
+export async function workoutAll<T>(): Promise<T[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ draft: string }>('SELECT draft FROM workouts ORDER BY date DESC');
+  return rows.map((r) => JSON.parse(r.draft) as T);
+}
+
 /** Wipe everything local: used on sign-out so the next account starts clean. */
 export async function clearLocalData(): Promise<void> {
   const db = await getDb();
-  await db.execAsync('DELETE FROM outbox; DELETE FROM cache;');
+  await db.execAsync('DELETE FROM outbox; DELETE FROM cache; DELETE FROM workouts;');
 }

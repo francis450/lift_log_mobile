@@ -114,6 +114,28 @@ describe('sync queue', () => {
     expect(await queue.pending()).toBe(0);
   });
 
+  it('a whole workout logged offline syncs as one session write, the latest', async () => {
+    let online = false;
+    const send = jest.fn(async () => {
+      if (!online) throw new NetworkError();
+    });
+    const { queue, advance } = setup(send);
+    // Start, three ticks and finish, all in airplane mode.
+    for (const [i, status] of ['in_progress', 'in_progress', 'in_progress', 'in_progress', 'done'].entries()) {
+      await queue.enqueue('session', '2026-10-06', { status, sets: i });
+      await queue.flush();
+    }
+    expect(await queue.pending()).toBe(1);
+
+    online = true;
+    send.mockClear();
+    advance(10 * 60_000);
+    await queue.flush();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect((send.mock.calls[0] as unknown as [OutboxItem])[0].payload).toEqual({ status: 'done', sets: 4 });
+    expect(await queue.pending()).toBe(0);
+  });
+
   it('shares one run between concurrent flushes', async () => {
     const send = jest.fn(async () => undefined);
     const { queue } = setup(send);

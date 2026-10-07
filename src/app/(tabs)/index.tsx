@@ -4,14 +4,15 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import type { TodayResponse } from '@/api/types';
+import type { Session, TodayResponse } from '@/api/types';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Meter } from '@/components/Meter';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { WeekStrip } from '@/components/WeekStrip';
 import { useProfile, useSaveProfile, useTimeZone, useToday } from '@/hooks/queries';
-import { formatDayShort, formatTime12, minutesNowIn } from '@/lib/dates';
+import { addDays, formatDayShort, formatTime12, minutesNowIn } from '@/lib/dates';
+import { callSentence } from '@/lib/nextCall';
 import {
   describeSets,
   phaseLabel,
@@ -23,6 +24,8 @@ import {
 } from '@/lib/today';
 import { useAuth } from '@/state/auth';
 import { colors, fonts, type } from '@/theme';
+import { useLocalWorkouts, useServerHistories } from '@/workout/data';
+import { callFor, exerciseInfo, historyFor, nextItemFor, toSession } from '@/workout/model';
 
 export default function TodayScreen() {
   const today = useToday();
@@ -35,7 +38,11 @@ export default function TodayScreen() {
     if (profile.data && !profile.data.exists) void setHasProfile(false);
   }, [profile.data, setHasProfile]);
 
-  const data = today.data;
+  // This phone's copy of today's workout is newer than the server's until it syncs.
+  const local = useLocalWorkouts();
+  const server = today.data;
+  const draft = server ? local.data?.drafts.find((d) => d.date === server.date) : undefined;
+  const data = server && draft ? { ...server, session: toSession(draft) } : server;
   const phase = phaseLabel(data?.phase);
   const eyebrow = data ? `${formatDayShort(data.date)}${data.week ? ` · Week ${data.week}` : ''}` : ' ';
 
@@ -75,7 +82,7 @@ export default function TodayScreen() {
             <TargetsNote note={data.targets_note} />
             <SessionCardView data={data} sessionTime={profile.data?.session_time ?? null} />
             <FoodCard data={data} minutesNow={minutesNowIn(tz)} />
-            <LastSessionCard data={data} />
+            <LastSessionCard data={data} sessions={local.data?.sessions ?? []} />
           </>
         ) : null}
       </ScrollView>
@@ -140,7 +147,14 @@ function SessionCardView({ data, sessionTime }: { data: TodayResponse; sessionTi
         <Button
           label={card.kind === 'start' ? 'Start workout' : 'Resume workout'}
           icon={<Play size={20} strokeWidth={2} color={colors.white} />}
-          onPress={() => router.push('/workout')}
+          onPress={() => router.push({ pathname: '/workout', params: { date: data.date } })}
+        />
+      ) : null}
+      {card.kind === 'done' ? (
+        <Button
+          variant="secondary"
+          label="View summary"
+          onPress={() => router.push({ pathname: '/session/[date]', params: { date: data.date } })}
         />
       ) : null}
     </Card>
@@ -174,9 +188,23 @@ function FoodCard({ data, minutesNow }: { data: TodayResponse; minutesNow: numbe
   );
 }
 
-function LastSessionCard({ data }: { data: TodayResponse }) {
+function LastSessionCard({ data, sessions }: { data: TodayResponse; sessions: Session[] }) {
   const last = data.last_session;
+  const profile = useProfile().data;
+  const exercise = last?.highlight?.exercise;
+  const server = useServerHistories(exercise ? [exercise] : []);
   if (!last) return null;
+
+  // The add-weight call for the next time this lift comes up.
+  let next = '';
+  const program = profile?.program;
+  if (exercise && program) {
+    const item = nextItemFor(program, exercise, addDays(data.date, 1));
+    if (item) {
+      const history = historyFor(exercise, addDays(data.date, 1), sessions, server.byExercise[exercise] ?? []);
+      next = ` ${callSentence(callFor({ program, item, info: exerciseInfo(profile.exercises, exercise), history }))}.`;
+    }
+  }
   return (
     <View style={styles.lastCard}>
       <View style={styles.lastIcon}>
@@ -185,7 +213,9 @@ function LastSessionCard({ data }: { data: TodayResponse }) {
       <View style={styles.lastText}>
         <Text style={styles.lastTitle}>Last session: {last.routine_name ?? formatDayShort(last.date)}</Text>
         {last.highlight ? (
-          <Text style={type.secondary}>{describeSets(last.highlight.exercise, last.highlight.sets)}.</Text>
+          <Text style={type.secondary}>
+            {describeSets(last.highlight.exercise, last.highlight.sets)}.{next}
+          </Text>
         ) : null}
       </View>
     </View>

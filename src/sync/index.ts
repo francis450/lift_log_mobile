@@ -5,8 +5,11 @@ import { AppState } from 'react-native';
 
 import { ApiError } from '@/api/client';
 import * as api from '@/api/endpoints';
-import type { ProfileUpdate } from '@/api/types';
+import type { Profile, ProfileUpdate, Session, SessionPayload } from '@/api/types';
+import { workoutPut } from '@/db/database';
+import { routineFor } from '@/lib/program';
 import { useAuth } from '@/state/auth';
+import { fromSession } from '@/workout/model';
 import { useNotice } from '@/state/notice';
 import { queryClient } from '@/state/queryClient';
 
@@ -20,8 +23,22 @@ async function send(item: OutboxItem): Promise<void> {
     case 'profile':
       queryClient.setQueryData(['profile'], await api.saveProfile(credentials, item.payload as ProfileUpdate));
       return;
+    case 'session':
+      await api.saveSession(credentials, item.payload as SessionPayload);
+      void queryClient.invalidateQueries({ queryKey: ['sessions-month'] });
+      return;
     default:
       throw new Error(`No sender for ${item.kind} yet`);
+  }
+}
+
+/** The server copy wins: store it locally in place of ours. */
+async function takeServerCopy(item: OutboxItem, stored: unknown) {
+  if (item.kind === 'session' && stored) {
+    const session = stored as Session;
+    const program = queryClient.getQueryData<Profile>(['profile'])?.program;
+    const routine = program ? routineFor(program, session.session_date) : null;
+    await workoutPut(session.session_date, fromSession(session, routine));
   }
 }
 
@@ -29,7 +46,8 @@ export const syncQueue = createSyncQueue({
   store: sqliteOutbox,
   send,
   events: {
-    onConflict: async () => {
+    onConflict: async (item, stored) => {
+      await takeServerCopy(item, stored);
       useNotice.getState().show('Updated from another device');
       await queryClient.invalidateQueries();
     },
