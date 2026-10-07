@@ -27,6 +27,13 @@ const MIGRATIONS: string[] = [
      draft TEXT NOT NULL,
      updated_at INTEGER NOT NULL
    );`,
+  // M4: food days edited on the phone. `synced` = 0 while a change waits for the server.
+  `CREATE TABLE IF NOT EXISTS food_days (
+     date TEXT PRIMARY KEY NOT NULL,
+     day TEXT NOT NULL,
+     synced INTEGER NOT NULL DEFAULT 0,
+     updated_at INTEGER NOT NULL
+   );`,
 ];
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -90,8 +97,37 @@ export async function workoutAll<T>(): Promise<T[]> {
   return rows.map((r) => JSON.parse(r.draft) as T);
 }
 
+export interface LocalFoodDay<T> {
+  day: T;
+  synced: boolean;
+}
+
+export async function foodDayGet<T>(date: string): Promise<LocalFoodDay<T> | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ day: string; synced: number }>(
+    'SELECT day, synced FROM food_days WHERE date = ?',
+    [date],
+  );
+  return row ? { day: JSON.parse(row.day) as T, synced: !!row.synced } : null;
+}
+
+export async function foodDayPut(date: string, day: unknown, synced: boolean): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT INTO food_days (date, day, synced, updated_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(date) DO UPDATE SET day = excluded.day, synced = excluded.synced, updated_at = excluded.updated_at`,
+    [date, JSON.stringify(day), synced ? 1 : 0, Date.now()],
+  );
+}
+
+export async function foodDaysSince<T>(date: string): Promise<T[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ day: string }>('SELECT day FROM food_days WHERE date >= ? ORDER BY date DESC', [date]);
+  return rows.map((r) => JSON.parse(r.day) as T);
+}
+
 /** Wipe everything local: used on sign-out so the next account starts clean. */
 export async function clearLocalData(): Promise<void> {
   const db = await getDb();
-  await db.execAsync('DELETE FROM outbox; DELETE FROM cache; DELETE FROM workouts;');
+  await db.execAsync('DELETE FROM outbox; DELETE FROM cache; DELETE FROM workouts; DELETE FROM food_days;');
 }

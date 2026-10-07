@@ -5,8 +5,9 @@ import { AppState } from 'react-native';
 
 import { ApiError } from '@/api/client';
 import * as api from '@/api/endpoints';
-import type { Profile, ProfileUpdate, Session, SessionPayload } from '@/api/types';
+import type { FoodDay, FoodItem, Profile, ProfileUpdate, Session, SessionPayload } from '@/api/types';
 import { workoutPut } from '@/db/database';
+import { markFoodDaySynced } from '@/food/store';
 import { routineFor } from '@/lib/program';
 import { useAuth } from '@/state/auth';
 import { fromSession } from '@/workout/model';
@@ -27,6 +28,15 @@ async function send(item: OutboxItem): Promise<void> {
       await api.saveSession(credentials, item.payload as SessionPayload);
       void queryClient.invalidateQueries({ queryKey: ['sessions-month'] });
       return;
+    case 'food_day': {
+      const sent = item.payload as FoodDay;
+      await markFoodDaySynced(sent, await api.saveFoodDay(credentials, sent));
+      void queryClient.invalidateQueries({ queryKey: ['food-month'] });
+      return;
+    }
+    case 'food_item':
+      await api.saveFoodItem(credentials, item.payload as Omit<FoodItem, 'name'>);
+      return;
     default:
       throw new Error(`No sender for ${item.kind} yet`);
   }
@@ -39,6 +49,9 @@ async function takeServerCopy(item: OutboxItem, stored: unknown) {
     const program = queryClient.getQueryData<Profile>(['profile'])?.program;
     const routine = program ? routineFor(program, session.session_date) : null;
     await workoutPut(session.session_date, fromSession(session, routine));
+  }
+  if (item.kind === 'food_day' && stored) {
+    await markFoodDaySynced(null, stored as FoodDay);
   }
 }
 

@@ -1,6 +1,9 @@
 import { apiCall, Credentials } from './client';
 import type {
+  FoodDay,
+  FoodItem,
   FoodMonthDay,
+  FoodSearchResult,
   HistoryItem,
   MonthSession,
   Profile,
@@ -45,6 +48,22 @@ export function sessionHistory(credentials: Credentials, exercise: string, limit
 
 export function sessionsMonth(credentials: Credentials, month: string) {
   return apiCall<MonthSession[]>('GET', 'sessions.month', { month }, { credentials });
+}
+
+export function getFoodDay(credentials: Credentials, date: string) {
+  return apiCall<FoodDay>('GET', 'food.get_day', { date }, { credentials });
+}
+
+export function saveFoodDay(credentials: Credentials, day: FoodDay) {
+  return apiCall<FoodDay>('POST', 'food.save_day', day as unknown as Record<string, unknown>, { credentials });
+}
+
+export function foodSearch(credentials: Credentials, q = '', limit = 100) {
+  return apiCall<FoodSearchResult>('GET', 'food.search', { q, limit }, { credentials });
+}
+
+export function saveFoodItem(credentials: Credentials, item: Omit<FoodItem, 'name'>) {
+  return apiCall<FoodItem>('POST', 'food.save_item', item, { credentials });
 }
 
 export function foodMonth(credentials: Credentials, month: string) {

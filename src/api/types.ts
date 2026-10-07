@@ -95,6 +95,41 @@ export interface FoodMonthDay {
   meals: number;
 }
 
+export type Meal = 'breakfast' | 'lunch' | 'dinner' | 'snacks';
+export type FoodSource = 'search' | 'custom' | 'describe' | 'photo' | 'suggestion' | 'migrated';
+
+export interface FoodEntry {
+  client_id: string;
+  meal: Meal;
+  food_name: string;
+  portion: string;
+  qty: number;
+  kcal_per_portion: number;
+  protein_per_portion: number;
+  source: FoodSource;
+  added_at: string | null;
+}
+
+export interface FoodDay {
+  food_date: string;
+  client_updated_at: string | null;
+  entries: FoodEntry[];
+}
+
+export interface FoodItem {
+  name: string | null;
+  food_name: string;
+  portion: string;
+  kcal: number;
+  protein_g: number;
+}
+
+export interface FoodSearchResult {
+  recent: FoodItem[];
+  mine: FoodItem[];
+  library: FoodItem[];
+}
+
 export interface HistoryItem {
   date: string;
   week: number | null;

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, fonts } from '@/theme';
@@ -13,11 +13,16 @@ interface Props {
 
 /** Dark bar with white text and an optional light-accent action ("Undo"). Hides itself after 5 s. */
 export function Snackbar({ message, actionLabel, onAction, onDismiss, durationMs = 5000 }: Props) {
+  // The timer restarts only for a new message, not when the parent re-renders.
+  const dismiss = useRef(onDismiss);
+  useEffect(() => {
+    dismiss.current = onDismiss;
+  });
   useEffect(() => {
     if (!message) return;
-    const timer = setTimeout(onDismiss, durationMs);
+    const timer = setTimeout(() => dismiss.current(), durationMs);
     return () => clearTimeout(timer);
-  }, [message, durationMs, onDismiss]);
+  }, [message, durationMs]);
 
   if (!message) return null;
   return (

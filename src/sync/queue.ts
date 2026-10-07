@@ -3,7 +3,7 @@
 
 import { ApiError, ConflictError, NetworkError } from '@/api/client';
 
-export type OutboxKind = 'profile' | 'session' | 'food_day' | 'checkin';
+export type OutboxKind = 'profile' | 'session' | 'food_day' | 'food_item' | 'checkin';
 
 export interface OutboxItem {
   id: number;

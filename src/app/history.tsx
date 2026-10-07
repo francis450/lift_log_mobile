@@ -144,7 +144,7 @@ export default function HistoryScreen() {
             tint={colors.accentSoft}
             title={`Food: ${formatKcal(dayFood.kcal)} kcal · ${dayFood.protein_g} g protein`}
             sub={`${dayFood.entries} ${dayFood.entries === 1 ? 'item' : 'items'} across ${dayFood.meals} ${dayFood.meals === 1 ? 'meal' : 'meals'}`}
-            onPress={() => router.navigate('/food')}
+            onPress={() => router.navigate({ pathname: '/food', params: { date: selected } })}
           />
         ) : null}
 

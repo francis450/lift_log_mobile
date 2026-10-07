@@ -11,7 +11,9 @@ import { Meter } from '@/components/Meter';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { WeekStrip } from '@/components/WeekStrip';
 import { useProfile, useSaveProfile, useTimeZone, useToday } from '@/hooks/queries';
-import { addDays, formatDayShort, formatTime12, minutesNowIn } from '@/lib/dates';
+import { useFoodDay } from '@/food/data';
+import { totals } from '@/food/model';
+import { addDays, formatDayShort, formatTime12, minutesNowIn, todayIn } from '@/lib/dates';
 import { callSentence } from '@/lib/nextCall';
 import {
   describeSets,
@@ -40,9 +42,12 @@ export default function TodayScreen() {
 
   // This phone's copy of today's workout is newer than the server's until it syncs.
   const local = useLocalWorkouts();
+  const foodDay = useFoodDay(todayIn(tz));
   const server = today.data;
   const draft = server ? local.data?.drafts.find((d) => d.date === server.date) : undefined;
-  const data = server && draft ? { ...server, session: toSession(draft) } : server;
+  let data = server && draft ? { ...server, session: toSession(draft) } : server;
+  // Same for food logged offline.
+  if (data && foodDay.pending && foodDay.day.food_date === data.date) data = { ...data, food: totals(foodDay.day.entries) };
   const phase = phaseLabel(data?.phase);
   const eyebrow = data ? `${formatDayShort(data.date)}${data.week ? ` · Week ${data.week}` : ''}` : ' ';
 
