@@ -2,7 +2,7 @@ import { Search } from 'lucide-react-native';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import type { FoodItem, FoodSource, Meal } from '@/api/types';
+import type { EstimateItem, FoodItem, FoodSource, Meal } from '@/api/types';
 import { BottomSheet } from '@/components/BottomSheet';
 import { Button } from '@/components/Button';
 import { QtyStepper } from '@/components/QtyStepper';
@@ -13,9 +13,10 @@ import { checkRange, parseNumber } from '@/lib/numbers';
 import { formatKcal } from '@/lib/targets';
 import { colors, fonts, radii, type } from '@/theme';
 
+import { AiNotReady, DescribeTab, PhotoTab } from './AiTabs';
 import { MEALS, mealLabel, searchFoods } from './model';
 
-type Tab = 'search' | 'custom';
+type Tab = 'photo' | 'describe' | 'search' | 'custom';
 
 export interface AddRequest {
   meal: Meal;
@@ -29,17 +30,24 @@ interface Props {
   visible: boolean;
   initialMeal: Meal;
   foods: { recent: FoodItem[]; mine: FoodItem[]; library: FoodItem[] };
+  /** Photo and Describe need Claude on the server; when not ready they show this message instead. */
+  ai: { ready: boolean; message: string | null };
   onAdd: (request: AddRequest) => void;
+  onAddMany: (meal: Meal, items: EstimateItem[], source: FoodSource) => void;
   onClose: () => void;
 }
 
-export function AddFoodSheet({ visible, initialMeal, foods, onAdd, onClose }: Props) {
-  const [tab, setTab] = useState<Tab>('search');
+export function AddFoodSheet({ visible, initialMeal, foods, ai, onAdd, onAddMany, onClose }: Props) {
+  // The camera opens at once when AI is set up; otherwise start on Search.
+  const [tab, setTab] = useState<Tab>(ai.ready ? 'photo' : 'search');
   const [meal, setMeal] = useState<Meal>(initialMeal);
+  const notReady = ai.message ?? "AI features aren't set up on your server";
   return (
     <BottomSheet visible={visible} title="Add food" onClose={onClose} heightFraction={0.85}>
       <Segmented<Tab>
         options={[
+          { value: 'photo', label: 'Photo' },
+          { value: 'describe', label: 'Describe' },
           { value: 'search', label: 'Search' },
           { value: 'custom', label: 'Custom' },
         ]}
@@ -62,11 +70,14 @@ export function AddFoodSheet({ visible, initialMeal, foods, onAdd, onClose }: Pr
           );
         })}
       </View>
-      {tab === 'search' ? (
-        <SearchTab meal={meal} foods={foods} onAdd={onAdd} />
-      ) : (
-        <CustomTab meal={meal} onAdd={onAdd} />
-      )}
+      {tab === 'photo' ? (
+        ai.ready ? <PhotoTab onAddMany={(items, source) => onAddMany(meal, items, source)} /> : <AiNotReady message={notReady} />
+      ) : null}
+      {tab === 'describe' ? (
+        ai.ready ? <DescribeTab onAddMany={(items, source) => onAddMany(meal, items, source)} /> : <AiNotReady message={notReady} />
+      ) : null}
+      {tab === 'search' ? <SearchTab meal={meal} foods={foods} onAdd={onAdd} /> : null}
+      {tab === 'custom' ? <CustomTab meal={meal} onAdd={onAdd} /> : null}
     </BottomSheet>
   );
 }

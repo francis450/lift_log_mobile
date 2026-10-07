@@ -64,7 +64,32 @@ export interface Profile {
   program: Program | null;
   /** Keyed by exercise name. Missing on servers older than the M3 backend update. */
   exercises?: Record<string, ExerciseInfo>;
+  /** Whether Photo, Describe and suggestions can run. Missing on servers older than M5. */
+  ai?: { ready: boolean; message: string | null };
   exists: boolean;
+}
+
+export interface EstimateItem {
+  food_name: string;
+  portion: string;
+  kcal: number;
+  protein_g: number;
+}
+
+export interface EstimateResponse {
+  items: EstimateItem[];
+  model: string;
+}
+
+export interface SuggestionOption {
+  title: string;
+  why: string;
+  items: EstimateItem[];
+}
+
+export interface SuggestResponse {
+  options: SuggestionOption[];
+  model: string;
 }
 
 export interface ExerciseInfo {

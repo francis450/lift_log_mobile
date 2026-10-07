@@ -1,6 +1,6 @@
 // Pure food-day logic: entries, totals, meal presets, the double-add guard and search ranking.
 
-import type { FoodDay, FoodEntry, FoodItem, FoodSource, Meal } from '@/api/types';
+import type { EstimateItem, FoodDay, FoodEntry, FoodItem, FoodSource, Meal } from '@/api/types';
 
 export const MEALS: { key: Meal; label: string }[] = [
   { key: 'breakfast', label: 'Breakfast' },
@@ -155,6 +155,41 @@ export function recentFromDays(days: FoodDay[]): FoodItem[] {
     out.push({ name: null, food_name: e.food_name, portion: e.portion, kcal: e.kcal_per_portion, protein_g: e.protein_per_portion });
   }
   return out;
+}
+
+export interface EstimateRow {
+  item: EstimateItem;
+  checked: boolean;
+  kcal: string;
+  protein: string;
+}
+
+/** Estimated foods as editable, ticked rows. */
+export function estimateRows(items: EstimateItem[]): EstimateRow[] {
+  return items.map((item) => ({ item, checked: true, kcal: String(item.kcal), protein: String(item.protein_g) }));
+}
+
+function num(text: string): number | null {
+  const n = Number(text.trim().replace(',', '.'));
+  return text.trim() && Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/** The ticked rows with their (edited) numbers; rows with an invalid number are left out. */
+export function chosenItems(rows: EstimateRow[]): EstimateItem[] {
+  return rows.flatMap((r) => {
+    const kcal = num(r.kcal);
+    const protein = num(r.protein);
+    if (!r.checked || kcal === null || protein === null) return [];
+    return [{ ...r.item, kcal, protein_g: protein }];
+  });
+}
+
+/** "Add 3 foods · 610 kcal · 34 g" */
+export function addFoodsLabel(items: EstimateItem[]): string {
+  const kcal = Math.round(items.reduce((s, i) => s + i.kcal, 0));
+  const protein = Math.round(items.reduce((s, i) => s + i.protein_g, 0));
+  const noun = items.length === 1 ? 'food' : 'foods';
+  return `Add ${items.length} ${noun} · ${kcal.toLocaleString('en-US')} kcal · ${protein} g`;
 }
 
 export function mergeRecent(local: FoodItem[], server: FoodItem[]): FoodItem[] {

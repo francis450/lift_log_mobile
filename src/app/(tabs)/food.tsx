@@ -4,7 +4,9 @@ import { useRef, useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import type { FoodEntry } from '@/api/types';
+import type { EstimateItem, FoodEntry, FoodSource, Meal } from '@/api/types';
+import { shouldSuggest, useSuggestion } from '@/food/suggestion';
+import { SuggestionCard } from '@/food/SuggestionCard';
 import { Card } from '@/components/Card';
 import { ExtendedFab } from '@/components/ExtendedFab';
 import { MealSection } from '@/components/MealSection';
@@ -60,6 +62,29 @@ function FoodDayScreen({ initialDate }: { initialDate: string }) {
   const sum = totals(day.entries);
   const kcalTarget = profile?.kcal_target ?? 2200;
   const proteinTarget = profile?.protein_target_g ?? null;
+  const ai = profile?.ai ?? { ready: false, message: null };
+  const nowMeal = mealForTime(minutesNowIn(tz));
+  const suggestion = useSuggestion(
+    date,
+    nowMeal,
+    shouldSuggest({ isToday: date === today, aiReady: ai.ready, kcalLeft: kcalTarget - sum.kcal }),
+  );
+
+  function addMany(meal: Meal, items: EstimateItem[], source: FoodSource) {
+    if (!items.length) return;
+    const now = new Date();
+    const entries = items.map((item) => makeEntry({ meal, item, qty: 1, source, now }));
+    void updateFoodDay(date, (d) => entries.reduce(withEntry, d));
+    setAdding(false);
+    const ids = new Set(entries.map((e) => e.client_id));
+    setNotice({
+      message:
+        entries.length === 1
+          ? `Added ${entries[0].food_name} to ${mealLabel(meal)}`
+          : `Added ${entries.length} foods to ${mealLabel(meal)}`,
+      undo: () => void updateFoodDay(date, (d) => ({ ...d, entries: d.entries.filter((e) => !ids.has(e.client_id)) })),
+    });
+  }
 
   function add(request: AddRequest) {
     const entry = makeEntry({ meal: request.meal, item: request.item, qty: request.qty, source: request.source, now: new Date() });
@@ -128,6 +153,17 @@ function FoodDayScreen({ initialDate }: { initialDate: string }) {
           <Meter stacked variant="protein" value={sum.protein_g} target={proteinTarget} />
         </Card>
 
+        <SuggestionCard
+          meal={nowMeal}
+          option={suggestion.option}
+          loading={suggestion.loading}
+          onOther={() => void suggestion.next()}
+          onAdd={(option) => {
+            addMany(nowMeal, option.items, 'suggestion');
+            void suggestion.dismiss();
+          }}
+        />
+
         <View style={styles.meals}>
           {MEALS.map((meal, i) => (
             <MealSection
@@ -166,9 +202,11 @@ function FoodDayScreen({ initialDate }: { initialDate: string }) {
       {adding ? (
         <AddFoodSheet
           visible
-          initialMeal={mealForTime(minutesNowIn(tz))}
+          initialMeal={nowMeal}
           foods={foods}
+          ai={ai}
           onAdd={add}
+          onAddMany={addMany}
           onClose={() => setAdding(false)}
         />
       ) : null}

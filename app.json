@@ -32,7 +32,14 @@
       ["expo-secure-store", { "configureAndroidBackup": true }],
       "expo-font",
       ["expo-splash-screen", { "backgroundColor": "#2350A8", "image": "./assets/splash-icon.png", "imageWidth": 160 }],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Lift Log uses the camera to photograph meals for calorie estimates.",
+          "photosPermission": "Lift Log reads a meal photo you pick for calorie estimates."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

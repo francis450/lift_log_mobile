@@ -1,6 +1,9 @@
 import { apiCall, Credentials } from './client';
 import type {
+  EstimateResponse,
   FoodDay,
+  Meal,
+  SuggestResponse,
   FoodItem,
   FoodMonthDay,
   FoodSearchResult,
@@ -64,6 +67,19 @@ export function foodSearch(credentials: Credentials, q = '', limit = 100) {
 
 export function saveFoodItem(credentials: Credentials, item: Omit<FoodItem, 'name'>) {
   return apiCall<FoodItem>('POST', 'food.save_item', item, { credentials });
+}
+
+/** Photo and/or description to foods. The server allows 30 s for Claude; the phone waits a little longer. */
+export function estimate(
+  credentials: Credentials,
+  input: { text?: string; image_base64?: string; image_mime?: string },
+  signal?: AbortSignal,
+) {
+  return apiCall<EstimateResponse>('POST', 'ai.estimate', input, { credentials, signal, timeoutMs: 45_000 });
+}
+
+export function suggest(credentials: Credentials, date: string, meal: Meal) {
+  return apiCall<SuggestResponse>('POST', 'ai.suggest', { date, meal }, { credentials, timeoutMs: 45_000 });
 }
 
 export function foodMonth(credentials: Credentials, month: string) {
