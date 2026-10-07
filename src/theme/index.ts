@@ -15,6 +15,8 @@ export const colors = {
   accentOnDark: '#9DBBF2',
   up: '#1D7A4A',
   upSoft: '#E2F3EA',
+  /** Protein bars under target (design value). */
+  upMid: '#7FB89A',
   hold: '#8A5A00',
   holdSoft: '#FBF0D9',
   danger: '#A1271E',

@@ -1,11 +1,11 @@
-// Meal photos: take or pick one, then resize to at most 1568 px on the long edge, JPEG quality 0.8.
+// Photos (meals, progress): take or pick one, then resize to at most 1568 px on the long edge, JPEG quality 0.8.
 
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 
 export const MAX_EDGE = 1568;
 
-export interface MealPhoto {
+export interface Photo {
   uri: string;
   base64: string;
   mime: 'image/jpeg';
@@ -23,7 +23,7 @@ export class PhotoPermissionError extends Error {
   }
 }
 
-export async function getMealPhoto(source: 'camera' | 'library'): Promise<MealPhoto | null> {
+export async function takePhoto(source: 'camera' | 'library'): Promise<Photo | null> {
   if (source === 'camera') {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) throw new PhotoPermissionError();

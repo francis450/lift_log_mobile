@@ -13,31 +13,48 @@ interface Props {
   height?: number;
 }
 
-/** Seven bars with a dashed target line. At/over target dark green, under light green, empty days a grey stub. */
-export function ProteinBars({ days, target, height = 120 }: Props) {
-  const max = Math.max(target * 1.2, ...days.map((d) => d.protein ?? 0));
-  const targetY = (target / max) * height;
+const BAR_MAX = 24;
+
+/** Bar heights in px for a fixed chart height: the scale tops out at 125% of target or the best day. */
+export function barScale(values: (number | null)[], target: number, height: number) {
+  const max = Math.max(target * 1.25, ...values.map((v) => v ?? 0));
+  return {
+    targetY: (target / max) * height,
+    heights: values.map((v) => (v === null ? null : Math.max((v / max) * height, 4))),
+  };
+}
+
+/**
+ * Seven columns with a dashed target line. At or over target dark green, under target light green,
+ * empty days a flat grey stub. Each logged day carries its value on the cap.
+ */
+export function ProteinBars({ days, target, height = 104 }: Props) {
+  const { targetY, heights } = barScale(
+    days.map((d) => d.protein),
+    target,
+    height,
+  );
   return (
     <View
       accessible
-      accessibilityLabel={`Protein this week, target ${target} g: ${days
-        .map((d) => `${d.label} ${d.protein === null ? 'not logged' : `${d.protein} g`}`)
-        .join(', ')}`}
+      accessibilityLabel={`Protein this week, target ${target} grams. ${days
+        .map((d) => `${d.label}: ${d.protein === null ? 'not logged' : `${d.protein} grams`}`)
+        .join('. ')}`}
     >
       <View style={[styles.chart, { height: height + 18 }]}>
         <View style={[styles.targetLine, { bottom: targetY }]} />
         {days.map((d, i) => {
-          const empty = d.protein === null;
-          const barHeight = empty ? 4 : Math.max((d.protein! / max) * height, 4);
-          const hit = !empty && d.protein! >= target;
+          const h = heights[i];
+          const hit = d.protein !== null && d.protein >= target;
           return (
             <View key={i} style={styles.col}>
-              {!empty ? <Text style={styles.value}>{d.protein}</Text> : null}
+              {d.protein !== null ? <Text style={styles.value}>{d.protein}</Text> : null}
               <View
                 style={[
                   styles.bar,
-                  { height: barHeight, backgroundColor: empty ? colors.track : hit ? colors.up : colors.upSoft },
-                  !empty && !hit ? styles.under : null,
+                  h === null
+                    ? styles.stub
+                    : { height: h, backgroundColor: hit ? colors.up : colors.upMid, borderTopLeftRadius: 4, borderTopRightRadius: 4 },
                 ]}
               />
             </View>
@@ -56,7 +73,7 @@ export function ProteinBars({ days, target, height = 120 }: Props) {
 }
 
 const styles = StyleSheet.create({
-  chart: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  chart: { flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
   targetLine: {
     position: 'absolute',
     left: 0,
@@ -65,10 +82,10 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     borderColor: colors.ink3,
   },
-  col: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 2 },
+  col: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 4 },
   value: { fontFamily: fonts.mono, fontSize: 11, color: colors.ink2 },
-  bar: { width: '100%', borderRadius: 6 },
-  under: { borderWidth: 1, borderColor: colors.up },
-  labels: { flexDirection: 'row', gap: 8, marginTop: 6 },
-  label: { flex: 1, textAlign: 'center', fontFamily: fonts.bodySemi, fontSize: 11, color: colors.ink3 },
+  bar: { width: '100%', maxWidth: BAR_MAX },
+  stub: { height: 4, borderRadius: 2, backgroundColor: colors.track },
+  labels: { flexDirection: 'row', gap: 10, marginTop: 6 },
+  label: { flex: 1, textAlign: 'center', fontFamily: fonts.bodySemi, fontSize: 11, letterSpacing: 0.66, color: colors.ink3 },
 });

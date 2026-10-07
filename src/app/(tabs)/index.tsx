@@ -127,6 +127,7 @@ function SessionCardView({ data, sessionTime }: { data: TodayResponse; sessionTi
         <Text style={styles.paragraph}>
           {card.kind === 'rest' ? 'No session today. Keep the food on track.' : 'Weigh in, then review your week.'}
         </Text>
+        {card.kind === 'checkin' ? <Button label="Check in" onPress={() => router.push('/checkin')} /> : null}
       </Card>
     );
   }

@@ -126,6 +126,13 @@ export async function foodDaysSince<T>(date: string): Promise<T[]> {
   return rows.map((r) => JSON.parse(r.day) as T);
 }
 
+/** Food days edited on the phone that the server doesn't have yet. */
+export async function foodDaysPending<T>(): Promise<T[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ day: string }>('SELECT day FROM food_days WHERE synced = 0');
+  return rows.map((r) => JSON.parse(r.day) as T);
+}
+
 /** Wipe everything local: used on sign-out so the next account starts clean. */
 export async function clearLocalData(): Promise<void> {
   const db = await getDb();

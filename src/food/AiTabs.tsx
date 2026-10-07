@@ -11,7 +11,7 @@ import { colors, fonts, radii, type } from '@/theme';
 
 import { EstimateResults } from './EstimateResults';
 import { chosenItems, EstimateRow, estimateRows } from './model';
-import { getMealPhoto, MealPhoto } from './photo';
+import { takePhoto, Photo } from './photo';
 
 const OFFLINE = "You're offline. Photo and Describe need a connection; Search and Custom work offline.";
 
@@ -79,7 +79,7 @@ function Estimating({ onCancel }: { onCancel: () => void }) {
 /** Photo: the camera opens at once; the photo (plus optional details) goes to the estimate endpoint. */
 export function PhotoTab({ onAddMany }: TabProps) {
   const estimate = useEstimate();
-  const [photo, setPhoto] = useState<MealPhoto | null>(null);
+  const [photo, setPhoto] = useState<Photo | null>(null);
   const [details, setDetails] = useState('');
   const [pickError, setPickError] = useState<string | null>(null);
   const opened = useRef(false);
@@ -87,7 +87,7 @@ export function PhotoTab({ onAddMany }: TabProps) {
   async function pick(source: 'camera' | 'library') {
     setPickError(null);
     try {
-      const taken = await getMealPhoto(source);
+      const taken = await takePhoto(source);
       if (!taken) return;
       setPhoto(taken);
       void estimate.run({ image_base64: taken.base64, image_mime: taken.mime, text: details.trim() || undefined });

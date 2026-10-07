@@ -5,7 +5,7 @@ import { AppState } from 'react-native';
 
 import { ApiError } from '@/api/client';
 import * as api from '@/api/endpoints';
-import type { FoodDay, FoodItem, Profile, ProfileUpdate, Session, SessionPayload } from '@/api/types';
+import type { CheckinPayload, FoodDay, FoodItem, Profile, ProfileUpdate, Session, SessionPayload } from '@/api/types';
 import { workoutPut } from '@/db/database';
 import { markFoodDaySynced } from '@/food/store';
 import { routineFor } from '@/lib/program';
@@ -36,6 +36,11 @@ async function send(item: OutboxItem): Promise<void> {
     }
     case 'food_item':
       await api.saveFoodItem(credentials, item.payload as Omit<FoodItem, 'name'>);
+      return;
+    case 'checkin':
+      await api.saveCheckin(credentials, item.payload as CheckinPayload);
+      void queryClient.invalidateQueries({ queryKey: ['profile'] });
+      void queryClient.invalidateQueries({ queryKey: ['progress'] });
       return;
     default:
       throw new Error(`No sender for ${item.kind} yet`);

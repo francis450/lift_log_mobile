@@ -69,6 +69,48 @@ export interface Profile {
   exists: boolean;
 }
 
+export interface Checkin {
+  name: string;
+  week: number;
+  checkin_date: string;
+  program: string | null;
+  weight_kg: number | null;
+  waist_cm: number | null;
+  forearm_cm: number | null;
+  sleep: number | null;
+  energy: number | null;
+  photo: string | null;
+}
+
+export interface CheckinGetResponse {
+  week: number;
+  checkin: Checkin | null;
+  previous_weight_kg: number | null;
+  last_measured: { waist: string | null; forearm: string | null };
+  due: { waist: boolean; forearm: boolean };
+}
+
+export interface CheckinPayload {
+  week: number;
+  checkin_date: string;
+  weight_kg: number;
+  waist_cm: number | null;
+  forearm_cm: number | null;
+  sleep: number | null;
+  energy: number | null;
+}
+
+export interface ProgressSummary {
+  week: number | null;
+  sessions: { done: number; planned_to_date: number };
+  protein_target_g: number | null;
+  protein_days_hit: number;
+  protein_by_day: { date: string; protein_g: number | null }[];
+  lifts: { label: string; exercise: string; start_kg: number | null; best: { kg: number; amount: number; date: string } | null }[];
+  bodyweight: { week: number; kg: number | null }[];
+  forearm: { week: number; cm: number | null }[];
+}
+
 export interface EstimateItem {
   food_name: string;
   portion: string;

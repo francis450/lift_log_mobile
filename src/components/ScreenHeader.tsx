@@ -25,9 +25,12 @@ export function ScreenHeader({ title, eyebrow, right, onBack }: Props) {
         >
           <ChevronLeft size={24} color={colors.ink} strokeWidth={2} />
         </Pressable>
-        <Text accessibilityRole="header" style={[type.pushedTitle, styles.flex]}>
-          {title}
-        </Text>
+        <View style={styles.flex}>
+          {eyebrow ? <Text style={type.eyebrow}>{eyebrow}</Text> : null}
+          <Text accessibilityRole="header" style={type.pushedTitle} numberOfLines={1}>
+            {title}
+          </Text>
+        </View>
         {right}
       </View>
     );

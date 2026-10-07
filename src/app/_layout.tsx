@@ -77,6 +77,8 @@ export default function RootLayout() {
             <Stack.Screen name="workout" />
             <Stack.Screen name="session/[date]" />
             <Stack.Screen name="history" />
+            <Stack.Screen name="checkin" />
+            <Stack.Screen name="review" />
           </Stack.Protected>
         </Stack>
         <GlobalNotice />
