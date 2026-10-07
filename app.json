@@ -1,25 +1,40 @@
 {
   "expo": {
-    "name": "lift-log-mobile",
-    "slug": "lift-log-mobile",
+    "name": "Lift Log",
+    "slug": "lift-log",
+    "scheme": "liftlog",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false
     },
     "android": {
+      "package": "com.erpkenya.liftlog",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#2350A8",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
+      "softwareKeyboardLayoutMode": "resize",
       "predictiveBackGestureEnabled": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      "expo-sqlite",
+      ["expo-secure-store", { "configureAndroidBackup": true }],
+      "expo-font",
+      ["expo-splash-screen", { "backgroundColor": "#2350A8", "image": "./assets/splash-icon.png", "imageWidth": 160 }],
+      "@react-native-community/datetimepicker"
+    ],
+    "experiments": {
+      "typedRoutes": true
     }
   }
 }
