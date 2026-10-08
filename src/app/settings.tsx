@@ -12,8 +12,10 @@ import { SettingsGroup, SettingsRow } from '@/components/SettingsRow';
 import { TextField } from '@/components/TextField';
 import { TimePickerRow } from '@/components/TimePickerRow';
 import { Toggle } from '@/components/Toggle';
-import { useProfile, useSaveProfile } from '@/hooks/queries';
-import { formatDayMonth } from '@/lib/dates';
+import { NetworkError } from '@/api/client';
+import { useProfile, useSaveProfile, useTimeZone } from '@/hooks/queries';
+import { formatDayMonth, todayIn } from '@/lib/dates';
+import { exportMyData } from '@/settings/export';
 import { checkRange, formatNumber, parseNumber, RangeCheck, RULES } from '@/lib/numbers';
 import { formatKcal } from '@/lib/targets';
 import { useAuth } from '@/state/auth';
@@ -38,6 +40,23 @@ export default function SettingsScreen() {
   const signOut = useAuth((s) => s.signOut);
   const net = useNetInfo();
   const pending = useQuery({ queryKey: ['outbox-count'], queryFn: () => syncQueue.pending(), refetchInterval: 5000 });
+
+  const [exporting, setExporting] = useState(false);
+  const tz = useTimeZone();
+  async function runExport() {
+    if (!credentials) return;
+    setExporting(true);
+    try {
+      await exportMyData(credentials, todayIn(tz));
+    } catch (e) {
+      Alert.alert(
+        "Couldn't export",
+        e instanceof NetworkError ? 'Exporting needs a connection to your server.' : (e as Error).message,
+      );
+    } finally {
+      setExporting(false);
+    }
+  }
 
   function update(values: ProfileUpdate) {
     save.mutate(values, { onError: (e) => Alert.alert("Couldn't save", (e as Error).message) });
@@ -147,7 +166,17 @@ export default function SettingsScreen() {
           />
         </SettingsGroup>
 
-        <Button variant="danger" label="Sign out" onPress={confirmSignOut} height={48} />
+        <View style={styles.footer}>
+          <Button
+            variant="secondary"
+            label="Export my data"
+            height={48}
+            loading={exporting}
+            onPress={runExport}
+            style={styles.flex}
+          />
+          <Button variant="danger" label="Sign out" onPress={confirmSignOut} height={48} style={styles.flex} />
+        </View>
       </ScrollView>
 
       {editing ? (
@@ -226,5 +255,7 @@ function EditSheet({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   main: { paddingHorizontal: 20, paddingBottom: 24, gap: 14 },
+  footer: { flexDirection: 'row', gap: 10 },
+  flex: { flex: 1 },
   sheetButtons: { gap: 10 },
 });

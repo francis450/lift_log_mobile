@@ -9,6 +9,7 @@ import { cacheGet, cacheSet, foodDayGet, foodDayPut, foodDaysSince, LocalFoodDay
 import { addDays } from '@/lib/dates';
 import { useAuth } from '@/state/auth';
 import { queryClient } from '@/state/queryClient';
+import { syncReminders } from '@/reminders';
 import { enqueueAndSync } from '@/sync';
 
 import { emptyDay, mergeRecent, recentFromDays } from './model';
@@ -54,6 +55,8 @@ export async function updateFoodDay(date: string, edit: (day: FoodDay) => FoodDa
   await enqueueAndSync('food_day', date, next);
   void queryClient.invalidateQueries({ queryKey: ['today'] });
   void queryClient.invalidateQueries({ queryKey: ['food-recent'] });
+  // Logging dinner cancels tonight's "Log dinner" reminder.
+  void syncReminders();
   return next;
 }
 

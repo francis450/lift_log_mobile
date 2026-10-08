@@ -7,13 +7,16 @@ import {
 } from '@expo-google-fonts/ibm-plex-sans';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import * as Notifications from 'expo-notifications';
+import { Href, router, Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { AppState, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Snackbar } from '@/components/Snackbar';
+import { useProfile } from '@/hooks/queries';
+import { syncReminders } from '@/reminders';
 import { useAuth } from '@/state/auth';
 import { useNotice } from '@/state/notice';
 import { queryClient } from '@/state/queryClient';
@@ -21,6 +24,28 @@ import { startSync } from '@/sync';
 import { colors } from '@/theme';
 
 void SplashScreen.preventAutoHideAsync();
+
+/** Keeps reminders in step with the profile, and opens the screen a reminder points to when tapped. */
+function Reminders() {
+  const profile = useProfile();
+  useEffect(() => {
+    if (profile.data) void syncReminders();
+  }, [profile.data]);
+  useEffect(() => {
+    const appState = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void syncReminders();
+    });
+    const tap = Notifications.addNotificationResponseReceivedListener((response) => {
+      const url = response.notification.request.content.data?.url;
+      if (typeof url === 'string') router.push(url as Href);
+    });
+    return () => {
+      appState.remove();
+      tap.remove();
+    };
+  }, []);
+  return null;
+}
 
 function GlobalNotice() {
   const message = useNotice((s) => s.message);
@@ -82,6 +107,7 @@ export default function RootLayout() {
           </Stack.Protected>
         </Stack>
         <GlobalNotice />
+        {signedIn && hasProfile ? <Reminders /> : null}
       </QueryClientProvider>
     </SafeAreaProvider>
   );

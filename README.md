@@ -24,7 +24,7 @@ npm run typecheck
 ## Build an APK
 
 ```bash
-npx eas-cli@latest build -p android --profile preview
+npx eas-cli@latest build -p android --profile preview   # step by step, with server setup: INSTALL.md
 ```
 
 ## Layout

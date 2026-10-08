@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import { Credentials, normalizeServer } from '@/api/client';
 import * as api from '@/api/endpoints';
 import { clearLocalData } from '@/db/database';
+import { cancelReminders } from '@/reminders';
 
 import { queryClient } from './queryClient';
 
@@ -99,6 +100,8 @@ export const useAuth = create<AuthState>((set, get) => ({
       await api.signOut(credentials).catch(() => undefined);
     }
     await persist(null);
+    // Reminders belong to the account that set them.
+    await cancelReminders().catch(() => undefined);
     await clearLocalData();
     queryClient.clear();
     set({ status: 'signedOut', credentials: null, user: null, fullName: null, hasProfile: false });

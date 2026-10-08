@@ -19,8 +19,15 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "softwareKeyboardLayoutMode": "resize",
-      "permissions": ["VIBRATE"],
-      "predictiveBackGestureEnabled": false
+      "permissions": [
+        "VIBRATE"
+      ],
+      "predictiveBackGestureEnabled": false,
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -29,15 +36,36 @@
       "expo-router",
       "expo-status-bar",
       "expo-sqlite",
-      ["expo-secure-store", { "configureAndroidBackup": true }],
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true
+        }
+      ],
       "expo-font",
-      ["expo-splash-screen", { "backgroundColor": "#2350A8", "image": "./assets/splash-icon.png", "imageWidth": 160 }],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#2350A8",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 160
+        }
+      ],
       "@react-native-community/datetimepicker",
       [
         "expo-image-picker",
         {
           "cameraPermission": "Lift Log uses the camera to photograph meals for calorie estimates.",
-          "photosPermission": "Lift Log reads a meal photo you pick for calorie estimates."
+          "photosPermission": "Lift Log reads a meal photo you pick for calorie estimates.",
+          "microphonePermission": false
+        }
+      ],
+      "expo-sharing",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#2350A8"
         }
       ]
     ],
