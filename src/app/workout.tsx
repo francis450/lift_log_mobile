@@ -35,9 +35,9 @@ function Elapsed({ since }: { since: string }) {
 export default function WorkoutScreen() {
   useKeepAwake();
   const tz = useTimeZone();
-  const params = useLocalSearchParams<{ date?: string }>();
+  const params = useLocalSearchParams<{ date?: string; from?: string }>();
   const date = params.date ?? todayIn(tz);
-  const w = useWorkout(date);
+  const w = useWorkout(date, params.from);
   const [noteOpen, setNoteOpen] = useState(false);
   const scroll = useRef<ScrollView>(null);
 

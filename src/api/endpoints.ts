@@ -4,7 +4,10 @@ import type {
   CheckinGetResponse,
   CheckinPayload,
   EstimateResponse,
+  PlanChange,
   ProgressSummary,
+  ReviewStats,
+  WeeklyReview,
   FoodDay,
   Meal,
   SuggestResponse,
@@ -129,6 +132,27 @@ export async function uploadPrivateFile(
     throw new ApiError(extractMessage(json) ?? "The photo couldn't be uploaded. Try again.", response.status);
   }
   return json.message.file_url;
+}
+
+export function reviewStats(credentials: Credentials, week: number) {
+  return apiCall<ReviewStats>('GET', 'ai.review_stats', { week }, { credentials });
+}
+
+/** The server gives Claude 90 s for a review. */
+export function weeklyReview(credentials: Credentials, week: number, regenerate = false) {
+  return apiCall<WeeklyReview>('POST', 'ai.weekly_review', { week, regenerate: regenerate ? 1 : 0 }, { credentials, timeoutMs: 120_000 });
+}
+
+export function reviewFollowup(credentials: Credentials, week: number, question: string) {
+  return apiCall<{ answer: string }>('POST', 'ai.review_followup', { week, question }, { credentials, timeoutMs: 120_000 });
+}
+
+export function applyChanges(credentials: Credentials, week: number, accepted: number[]) {
+  return apiCall<WeeklyReview>('POST', 'ai.apply_changes', { week, accepted }, { credentials });
+}
+
+export function planChanges(credentials: Credentials, week: number) {
+  return apiCall<PlanChange[]>('GET', 'ai.plan_changes', { week }, { credentials });
 }
 
 export function foodMonth(credentials: Credentials, month: string) {

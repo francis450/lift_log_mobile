@@ -27,6 +27,9 @@ import {
 import { useAuth } from '@/state/auth';
 import { colors, fonts, type } from '@/theme';
 import { useLocalWorkouts, useServerHistories } from '@/workout/data';
+import { routineFor } from '@/lib/program';
+import { movedFrom } from '@/lib/review';
+import { usePlanChanges } from '@/review/data';
 import { callFor, exerciseInfo, historyFor, nextItemFor, toSession } from '@/workout/model';
 
 export default function TodayScreen() {
@@ -48,6 +51,12 @@ export default function TodayScreen() {
   let data = server && draft ? { ...server, session: toSession(draft) } : server;
   // Same for food logged offline.
   if (data && foodDay.pending && foodDay.day.food_date === data.date) data = { ...data, food: totals(foodDay.day.entries) };
+  // An accepted "move a missed Monday to Saturday" puts that routine on today's card.
+  const plan = usePlanChanges(data?.week ?? null);
+  const program = profile.data?.program;
+  const trained = (date: string) => !!data?.week_strip.find((d) => d.date === date)?.trained;
+  const from = data && program && !data.routine?.items?.length ? movedFrom(program, data.date, plan.data, trained) : null;
+  if (data && program && from) data = { ...data, routine: routineFor(program, from) };
   const phase = phaseLabel(data?.phase);
   const eyebrow = data ? `${formatDayShort(data.date)}${data.week ? ` · Week ${data.week}` : ''}` : ' ';
 
@@ -85,7 +94,7 @@ export default function TodayScreen() {
         {data ? (
           <>
             <TargetsNote note={data.targets_note} />
-            <SessionCardView data={data} sessionTime={profile.data?.session_time ?? null} />
+            <SessionCardView data={data} sessionTime={profile.data?.session_time ?? null} from={from} />
             <FoodCard data={data} minutesNow={minutesNowIn(tz)} />
             <LastSessionCard data={data} sessions={local.data?.sessions ?? []} />
           </>
@@ -118,7 +127,7 @@ function TargetsNote({ note }: { note: string | null }) {
   );
 }
 
-function SessionCardView({ data, sessionTime }: { data: TodayResponse; sessionTime: string | null }) {
+function SessionCardView({ data, sessionTime, from }: { data: TodayResponse; sessionTime: string | null; from: string | null }) {
   const card = sessionCard(data.routine, data.session);
   if (card.kind === 'rest' || card.kind === 'checkin') {
     return (
@@ -139,6 +148,7 @@ function SessionCardView({ data, sessionTime }: { data: TodayResponse; sessionTi
         {card.kind === 'done' ? 'Done' : sessionEyebrow(time, formatTime12(time))}
       </Text>
       <Text style={styles.cardTitle}>{routine.name}</Text>
+      {from ? <Text style={styles.paragraph}>Moved from {formatDayShort(from)} by your weekly review.</Text> : null}
       {routine.note ? <Text style={styles.paragraph}>{routine.note}</Text> : null}
       {card.kind !== 'optional' ? (
         <View style={styles.chips}>
@@ -153,7 +163,7 @@ function SessionCardView({ data, sessionTime }: { data: TodayResponse; sessionTi
         <Button
           label={card.kind === 'start' ? 'Start workout' : 'Resume workout'}
           icon={<Play size={20} strokeWidth={2} color={colors.white} />}
-          onPress={() => router.push({ pathname: '/workout', params: { date: data.date } })}
+          onPress={() => router.push({ pathname: '/workout', params: from ? { date: data.date, from } : { date: data.date } })}
         />
       ) : null}
       {card.kind === 'done' ? (

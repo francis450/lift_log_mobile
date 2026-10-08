@@ -202,12 +202,15 @@ export function callFor(params: {
   item: RoutineItem;
   info: ExerciseInfo;
   history: RuleSession[];
+  /** Accepted weekly-review weight change for this week. */
+  reviewDeltaKg?: number;
 }): NextCall {
-  const { program, item, info, history } = params;
+  const { program, item, info, history, reviewDeltaKg } = params;
   return nextCall(
     { name: item.exercise, type: info.type, increment_kg: info.increment_kg },
     { sets: item.sets, reps: item.reps, test: item.test, startingKg: program.starting_weights_kg?.[item.exercise] ?? null },
     history,
+    { reviewDeltaKg },
   );
 }
 

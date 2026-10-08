@@ -9,18 +9,25 @@ import { useProfile } from '@/hooks/queries';
 import { formatNumber } from '@/lib/numbers';
 import { Effort, NextCall, parseRepRange } from '@/lib/nextCall';
 import { restSeconds, routineFor, weekFor } from '@/lib/program';
+import { reviewDelta } from '@/lib/review';
+import { usePlanChanges } from '@/review/data';
 import { useAuth } from '@/state/auth';
 
 import { loadDraft, saveDraft, useLocalWorkouts, useServerHistories } from './data';
 import { callFor, createDraft, DraftRow, exerciseInfo, fromSession, historyFor, withDeloadRows, WorkoutDraft } from './model';
 
-export function useWorkout(date: string) {
+/**
+ * @param date the day the session is logged on
+ * @param from the day whose routine to do, when a missed session was moved (weekly review schedule change)
+ */
+export function useWorkout(date: string, from?: string) {
   const profile = useProfile().data;
   const credentials = useAuth((s) => s.credentials);
   const program = profile?.program ?? null;
   const library = profile?.exercises;
-  const routine = program ? routineFor(program, date) : null;
+  const routine = program ? routineFor(program, from ?? date) : null;
   const week = program ? weekFor(program, date) : null;
+  const plan = usePlanChanges(week);
   const items = useMemo(() => routine?.items ?? [], [routine]);
   const exercises = useMemo(() => items.map((i) => i.exercise), [items]);
 
@@ -44,10 +51,11 @@ export function useWorkout(date: string) {
         item,
         info: exerciseInfo(library, item.exercise),
         history: histories[item.exercise] ?? [],
+        reviewDeltaKg: reviewDelta(plan.data, item.exercise),
       });
     }
     return out;
-  }, [program, items, library, histories]);
+  }, [program, items, library, histories, plan.data]);
 
   /** Placeholder reps per set: last session's, else the bottom of the target range. */
   const placeholders = useMemo(() => {
@@ -63,7 +71,8 @@ export function useWorkout(date: string) {
   const [draft, setDraft] = useState<WorkoutDraft | null>(null);
   const draftRef = useRef<WorkoutDraft | null>(null);
   const started = useRef(false);
-  const ready = !!program && local.isSuccess && server.ready;
+  // Wait for the plan too, so a review's weight change is in the prefilled weights.
+  const ready = !!program && local.isSuccess && server.ready && !plan.isLoading;
 
   const commit = useCallback((next: WorkoutDraft, sync: boolean) => {
     draftRef.current = next;

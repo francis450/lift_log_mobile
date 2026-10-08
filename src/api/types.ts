@@ -111,6 +111,55 @@ export interface ProgressSummary {
   forearm: { week: number; cm: number | null }[];
 }
 
+export interface ReviewStats {
+  week: number;
+  phase: string | null;
+  period: [string, string];
+  targets: { kcal: number; protein_g: number };
+  sessions: { planned: number; done: number; missed: string[]; items: unknown[] };
+  effort: { easy: number; right: number; hard: number; unrated: number };
+  food: {
+    days_logged: number;
+    avg_kcal: number | null;
+    avg_protein_g: number | null;
+    protein_days_hit: number;
+    by_day: { date: string; kcal: number | null; protein_g: number | null }[];
+  };
+  checkin: {
+    weight_kg: number | null;
+    weight_change_kg: number | null;
+    waist_cm: number | null;
+    forearm_cm: number | null;
+    sleep: number | null;
+    energy: number | null;
+  };
+  goals: string;
+}
+
+export interface PlanChange {
+  change_type: 'weight' | 'nutrition' | 'schedule' | 'other';
+  title: string;
+  why: string;
+  exercise: string | null;
+  delta_kg: number | null;
+  applies_from_week?: number;
+  accepted?: boolean;
+}
+
+export interface WeeklyReview {
+  name: string;
+  program: string | null;
+  week: number;
+  period_start: string | null;
+  period_end: string | null;
+  stats: ReviewStats;
+  went_well: string;
+  to_change: string;
+  changes: PlanChange[];
+  model: string | null;
+  generated_at: string | null;
+}
+
 export interface EstimateItem {
   food_name: string;
   portion: string;

@@ -39,7 +39,7 @@ npx eas-cli@latest build -p android --profile preview
 | `src/db/` | SQLite: the outbox and cached responses so screens work offline. |
 | `src/state/` | Zustand stores (auth with the token in SecureStore, notices) and the Query client. |
 | `src/lib/` | Pure logic with unit tests: targets, dates, Today helpers, the program engine and the add-weight rule (`nextCall.ts`). |
-| `src/lib/__tests__/nextCall.cases.json` | The add-weight rule's test table, shared with the server's Python port (M7). |
+| `src/lib/__tests__/nextCall.cases.json` | The add-weight rule's test table. The server runs a copy (`lift_log/tests/rule_cases.json`) against its Python port; change both together. |
 | `src/workout/` | Workout drafts (saved on every change, resume after a kill), history merging, summaries, and the workout UI pieces. |
 
 ## Offline behaviour

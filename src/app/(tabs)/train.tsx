@@ -8,12 +8,14 @@ import { Card } from '@/components/Card';
 import { ComingSoon } from '@/components/ComingSoon';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { useProfile, useTimeZone } from '@/hooks/queries';
-import { formatDayMonth, todayIn, weekdayLabel } from '@/lib/dates';
-import { mainReps, phaseSpans, weekDates, weekFor } from '@/lib/program';
+import { formatDayMonth, formatDayShort, todayIn, weekdayLabel } from '@/lib/dates';
+import { mainReps, phaseSpans, routineFor, weekDates, weekFor } from '@/lib/program';
+import { movedFrom } from '@/lib/review';
+import { usePlanChanges } from '@/review/data';
 import { colors, fonts, phaseColors, radii, type } from '@/theme';
 import { useLocalWorkouts, useSessionsMonth } from '@/workout/data';
-import type { DayStatus } from '@/workout/model';
-import { restDaysLine, sessionsByDate, weekRows } from '@/workout/week';
+import { dayStatus, DayStatus } from '@/workout/model';
+import { restDaysLine, sessionsByDate, WeekRow, weekRows } from '@/workout/week';
 
 export default function TrainScreen() {
   const profile = useProfile();
@@ -36,7 +38,22 @@ function TrainBody({ program, sessionTime }: { program: Program; sessionTime: st
   const local = useLocalWorkouts();
   const server = [...(first.data ?? []), ...(months[1] ? (second.data ?? []) : [])];
   const sessions = sessionsByDate(server, local.data?.drafts ?? []);
-  const rows = weekRows(program, dates, today, sessions, sessionTime);
+  const rows: (WeekRow & { from?: string })[] = weekRows(program, dates, today, sessions, sessionTime);
+  // An accepted "move a missed Monday to Saturday" adds that routine on Saturday.
+  const plan = usePlanChanges(week);
+  const saturday = dates[5];
+  const from = movedFrom(program, saturday, plan.data, (d) => !!sessions.get(d));
+  if (from && !rows.some((r) => r.date === saturday)) {
+    const moved = routineFor(program, from)!;
+    const status = dayStatus(program, saturday, today, sessions.get(saturday) ?? null);
+    rows.push({
+      date: saturday,
+      routine: moved,
+      status: status === 'rest' ? (saturday < today ? 'missed' : saturday === today ? 'today' : 'upcoming') : status,
+      detail: `Moved from ${formatDayShort(from)}`,
+      from,
+    });
+  }
 
   const refresh = () => {
     void first.refetch();
@@ -77,7 +94,10 @@ function TrainBody({ program, sessionTime }: { program: Program; sessionTime: st
                 onPress={() =>
                   row.status === 'done'
                     ? router.push({ pathname: '/session/[date]', params: { date: row.date } })
-                    : router.push({ pathname: '/workout', params: { date: row.date } })
+                    : router.push({
+                        pathname: '/workout',
+                        params: row.from ? { date: row.date, from: row.from } : { date: row.date },
+                      })
                 }
                 style={[styles.day, isToday && styles.dayToday]}
               >
