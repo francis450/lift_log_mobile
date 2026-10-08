@@ -44,6 +44,8 @@ export default function WorkoutScreen() {
   const draft = w.draft;
   const routine = w.routine;
   const isDeload = routine?.key === 'home_deload';
+  // A finished session opened again (from its summary) is being edited.
+  const editing = draft?.status === 'done';
 
   async function finish() {
     const logged = draft ? Object.values(draft.rows).flat().filter((r) => r.reps).length : 0;
@@ -103,7 +105,7 @@ export default function WorkoutScreen() {
         {header(`${formatDayShort(date)} · Week ${w.week} · Exam week`, routine.name)}
         <DeloadView routine={routine} draft={draft} onRound={w.setRound} onTick={w.toggleTick} />
         <View style={styles.footer}>
-          <Button label="Finish deload session" onPress={finish} style={styles.flex} />
+          <Button label={editing ? 'Save changes' : 'Finish deload session'} onPress={finish} style={styles.flex} />
         </View>
       </SafeAreaView>
     );
@@ -121,7 +123,10 @@ export default function WorkoutScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
-      {header(`${formatDayShort(date)} · Exercise ${index + 1} of ${items.length}`, routine.name)}
+      {header(
+        `${formatDayShort(date)} · ${editing ? 'Editing · ' : ''}Exercise ${index + 1} of ${items.length}`,
+        routine.name,
+      )}
       <View
         style={styles.progress}
         accessibilityRole="progressbar"
@@ -174,11 +179,15 @@ export default function WorkoutScreen() {
 
       <View style={styles.footer}>
         <Button variant="secondary" label={draft.note ? 'Edit note' : 'Note'} onPress={() => setNoteOpen(true)} style={styles.flex} />
-        <Button
-          label={isLast ? 'Finish workout' : 'Next exercise'}
-          onPress={() => (isLast ? finish() : goTo(index + 1))}
-          style={styles.flex2}
-        />
+        {editing ? (
+          <Button label="Save changes" onPress={finish} style={styles.flex2} />
+        ) : (
+          <Button
+            label={isLast ? 'Finish workout' : 'Next exercise'}
+            onPress={() => (isLast ? finish() : goTo(index + 1))}
+            style={styles.flex2}
+          />
+        )}
       </View>
 
       {noteOpen ? (

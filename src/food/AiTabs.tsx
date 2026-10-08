@@ -76,13 +76,12 @@ function Estimating({ onCancel }: { onCancel: () => void }) {
   );
 }
 
-/** Photo: the camera opens at once; the photo (plus optional details) goes to the estimate endpoint. */
+/** Photo: take one or pick one; the photo (plus optional details) goes to the estimate endpoint. */
 export function PhotoTab({ onAddMany }: TabProps) {
   const estimate = useEstimate();
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [details, setDetails] = useState('');
   const [pickError, setPickError] = useState<string | null>(null);
-  const opened = useRef(false);
 
   async function pick(source: 'camera' | 'library') {
     setPickError(null);
@@ -95,14 +94,6 @@ export function PhotoTab({ onAddMany }: TabProps) {
       setPickError((e as Error).message);
     }
   }
-
-  useEffect(() => {
-    if (opened.current) return;
-    opened.current = true;
-    void pick('camera');
-    // Open the camera once, when the tab first shows.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const again = () =>
     photo && void estimate.run({ image_base64: photo.base64, image_mime: photo.mime, text: details.trim() || undefined });

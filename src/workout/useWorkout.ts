@@ -91,6 +91,11 @@ export function useWorkout(date: string, from?: string) {
         if (stored) existing = fromSession(stored, routine);
       }
       if (existing) {
+        if (existing.status === 'done') {
+          // Editing a finished session: open on the first exercise with nothing logged.
+          const empty = existing.exercises.findIndex((ex) => !(existing!.rows[ex] ?? []).some((r) => r.reps));
+          existing = { ...existing, current: empty >= 0 ? empty : 0, restEndsAt: null };
+        }
         draftRef.current = existing;
         setDraft(existing);
         return;
@@ -183,7 +188,9 @@ export function useWorkout(date: string, from?: string) {
     if (!prev || !routine) return;
     const base = routine.key === 'home_deload' ? withDeloadRows(prev, routine) : prev;
     const now = new Date().toISOString();
-    const done: WorkoutDraft = { ...base, status: 'done', finished_at: now, restEndsAt: null, client_updated_at: now };
+    // Editing a finished session keeps when it was finished, so its duration stays right.
+    const finishedAt = prev.status === 'done' && prev.finished_at ? prev.finished_at : now;
+    const done: WorkoutDraft = { ...base, status: 'done', finished_at: finishedAt, restEndsAt: null, client_updated_at: now };
     draftRef.current = done;
     setDraft(done);
     await saveDraft(done, true);

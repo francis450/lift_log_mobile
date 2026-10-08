@@ -38,7 +38,7 @@ interface Props {
 }
 
 export function AddFoodSheet({ visible, initialMeal, foods, ai, onAdd, onAddMany, onClose }: Props) {
-  // The camera opens at once when AI is set up; otherwise start on Search.
+  // Start on Photo (take or pick a photo, or switch tab) when AI is set up; otherwise on Search.
   const [tab, setTab] = useState<Tab>(ai.ready ? 'photo' : 'search');
   const [meal, setMeal] = useState<Meal>(initialMeal);
   const notReady = ai.message ?? "AI features aren't set up on your server";

@@ -1,6 +1,6 @@
 import { addFoodsLabel, chosenItems, estimateRows } from '../model';
 import { resizeTarget } from '../photo';
-import { REFRESH_MS, shouldSuggest, SuggestionState, suggestionDue } from '../suggestion';
+import { isShowable, KEEP_MS, SuggestionState } from '../suggestion';
 
 jest.mock('expo-image-manipulator', () => ({ ImageManipulator: {}, SaveFormat: { JPEG: 'jpeg' } }));
 jest.mock('expo-image-picker', () => ({}));
@@ -37,21 +37,19 @@ describe('estimate results', () => {
   });
 });
 
-describe('suggestion timing', () => {
+describe('suggestions on request', () => {
   const now = Date.parse('2026-10-07T09:00:00Z');
-  const cached: SuggestionState = { meal: 'lunch', fetchedAt: now - 60_000, options: [], index: 0, dismissed: false };
+  const option = { title: 'Chicken stew and rice', why: '', items: [] };
+  const saved: SuggestionState = { meal: 'lunch', fetchedAt: now - 60_000, options: [option], index: 0, dismissed: false };
 
-  it('reuses a suggestion for the same meal for 3 hours', () => {
-    expect(suggestionDue(cached, 'lunch', now)).toBe(false);
-    expect(suggestionDue(cached, 'lunch', cached.fetchedAt + REFRESH_MS)).toBe(true);
-    expect(suggestionDue(cached, 'dinner', now)).toBe(true);
-    expect(suggestionDue(null, 'lunch', now)).toBe(true);
+  it('shows the last answer for 3 hours, without asking again', () => {
+    expect(isShowable(saved, now)).toBe(true);
+    expect(isShowable(saved, saved.fetchedAt + KEEP_MS)).toBe(false);
   });
 
-  it('only suggests today, with AI set up and 300+ kcal left', () => {
-    expect(shouldSuggest({ isToday: true, aiReady: true, kcalLeft: 300 })).toBe(true);
-    expect(shouldSuggest({ isToday: true, aiReady: true, kcalLeft: 299 })).toBe(false);
-    expect(shouldSuggest({ isToday: false, aiReady: true, kcalLeft: 1500 })).toBe(false);
-    expect(shouldSuggest({ isToday: true, aiReady: false, kcalLeft: 1500 })).toBe(false);
+  it('hides a closed or empty answer, and shows nothing before you ask', () => {
+    expect(isShowable({ ...saved, dismissed: true }, now)).toBe(false);
+    expect(isShowable({ ...saved, options: [] }, now)).toBe(false);
+    expect(isShowable(null, now)).toBe(false);
   });
 });

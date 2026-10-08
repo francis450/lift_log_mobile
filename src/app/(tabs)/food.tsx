@@ -1,11 +1,11 @@
 import { useLocalSearchParams } from 'expo-router';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { useRef, useState } from 'react';
-import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { EstimateItem, FoodEntry, FoodSource, Meal } from '@/api/types';
-import { shouldSuggest, useSuggestion } from '@/food/suggestion';
+import { useSuggestion } from '@/food/suggestion';
 import { SuggestionCard } from '@/food/SuggestionCard';
 import { Card } from '@/components/Card';
 import { ExtendedFab } from '@/components/ExtendedFab';
@@ -15,7 +15,7 @@ import { ScreenHeader } from '@/components/ScreenHeader';
 import { Snackbar } from '@/components/Snackbar';
 import { useProfile, useTimeZone } from '@/hooks/queries';
 import { addDays, formatDayShort, minutesNowIn, todayIn } from '@/lib/dates';
-import { colors } from '@/theme';
+import { colors, type } from '@/theme';
 import { AddFoodSheet, AddRequest } from '@/food/AddFoodSheet';
 import { saveCustomFood, updateFoodDay, useFoodDay, useFoodLibrary } from '@/food/data';
 import { EditEntrySheet } from '@/food/EditEntrySheet';
@@ -64,11 +64,8 @@ function FoodDayScreen({ initialDate }: { initialDate: string }) {
   const proteinTarget = profile?.protein_target_g ?? null;
   const ai = profile?.ai ?? { ready: false, message: null };
   const nowMeal = mealForTime(minutesNowIn(tz));
-  const suggestion = useSuggestion(
-    date,
-    nowMeal,
-    shouldSuggest({ isToday: date === today, aiReady: ai.ready, kcalLeft: kcalTarget - sum.kcal }),
-  );
+  // Suggestions only run when asked for, to keep Claude calls down.
+  const suggestion = useSuggestion(date);
 
   function addMany(meal: Meal, items: EstimateItem[], source: FoodSource) {
     if (!items.length) return;
@@ -153,16 +150,21 @@ function FoodDayScreen({ initialDate }: { initialDate: string }) {
           <Meter stacked variant="protein" value={sum.protein_g} target={proteinTarget} />
         </Card>
 
-        <SuggestionCard
-          meal={nowMeal}
-          option={suggestion.option}
-          loading={suggestion.loading}
-          onOther={() => void suggestion.next()}
-          onAdd={(option) => {
-            addMany(nowMeal, option.items, 'suggestion');
-            void suggestion.dismiss();
-          }}
-        />
+        {date === today && ai.ready ? (
+          <SuggestionCard
+            defaultMeal={nowMeal}
+            current={suggestion.current}
+            loading={suggestion.loading}
+            error={suggestion.error}
+            onAsk={(meal) => void suggestion.ask(meal)}
+            onOther={() => void suggestion.next()}
+            onClose={() => void suggestion.dismiss()}
+            onAdd={(meal, option) => {
+              addMany(meal, option.items, 'suggestion');
+              void suggestion.dismiss();
+            }}
+          />
+        ) : null}
 
         <View style={styles.meals}>
           {MEALS.map((meal, i) => (
@@ -183,10 +185,11 @@ function FoodDayScreen({ initialDate }: { initialDate: string }) {
                         protein: entryProtein(e),
                       }))
               }
-              onLongPressEntry={(key) => setEditing(day.entries.find((e) => e.client_id === key) ?? null)}
+              onEditEntry={(key) => setEditing(day.entries.find((e) => e.client_id === key) ?? null)}
             />
           ))}
         </View>
+        {day.entries.length ? <Text style={[type.secondary, styles.hint]}>Tap an item to change the amount or delete it.</Text> : null}
       </ScrollView>
 
       <ExtendedFab label="Add food" onPress={() => setAdding(true)} style={[styles.fab, { bottom: notice ? 76 : 16 }]} />
@@ -249,4 +252,5 @@ const styles = StyleSheet.create({
   },
   fab: { position: 'absolute', right: 20 },
   snackbar: { position: 'absolute', left: 16, right: 16, bottom: 12 },
+  hint: { paddingHorizontal: 4 },
 });

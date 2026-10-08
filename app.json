@@ -20,7 +20,7 @@
       },
       "softwareKeyboardLayoutMode": "resize",
       "permissions": [
-        "VIBRATE"
+        "android.permission.VIBRATE"
       ],
       "predictiveBackGestureEnabled": false,
       "blockedPermissions": [
@@ -71,6 +71,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ed51715b-e12f-4110-9064-8f72c88a20f9"
+      }
     }
   }
 }

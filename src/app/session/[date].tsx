@@ -141,7 +141,13 @@ function Summary({ session }: { session: Session }) {
         ) : null}
       </ScrollView>
       <View style={styles.footer}>
-        <Button label="Done" onPress={done} />
+        <Button
+          variant="secondary"
+          label="Edit workout"
+          onPress={() => router.replace({ pathname: '/workout', params: { date: session.session_date } })}
+          style={styles.flex}
+        />
+        <Button label="Done" onPress={done} style={styles.flex} />
       </View>
     </SafeAreaView>
   );
@@ -170,5 +176,5 @@ const styles = StyleSheet.create({
   small: { fontSize: 12, lineHeight: 16 },
   gap10: { gap: 10 },
   gap4: { gap: 4, borderRadius: radii.button },
-  footer: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 },
+  footer: { flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 },
 });

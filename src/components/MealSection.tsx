@@ -15,12 +15,13 @@ export interface MealEntryView {
 interface Props {
   title: string;
   entries: MealEntryView[];
-  onLongPressEntry?: (key: string) => void;
+  /** Tap (or long-press) an entry to change it. */
+  onEditEntry?: (key: string) => void;
   divider?: boolean;
 }
 
 /** Meal title and total, entry rows (name × qty, kcal mono grey, protein mono green), or "Nothing yet". */
-export function MealSection({ title, entries, onLongPressEntry, divider }: Props) {
+export function MealSection({ title, entries, onEditEntry, divider }: Props) {
   const kcal = entries.reduce((sum, e) => sum + e.kcal, 0);
   const protein = entries.reduce((sum, e) => sum + e.protein, 0);
   return (
@@ -39,9 +40,10 @@ export function MealSection({ title, entries, onLongPressEntry, divider }: Props
       {entries.map((e) => (
         <Pressable
           key={e.key}
-          onLongPress={onLongPressEntry ? () => onLongPressEntry(e.key) : undefined}
-          accessibilityRole={onLongPressEntry ? 'button' : undefined}
-          accessibilityHint={onLongPressEntry ? 'Long press to change the amount or delete' : undefined}
+          onPress={onEditEntry ? () => onEditEntry(e.key) : undefined}
+          onLongPress={onEditEntry ? () => onEditEntry(e.key) : undefined}
+          accessibilityRole={onEditEntry ? 'button' : undefined}
+          accessibilityHint={onEditEntry ? 'Change the amount or delete' : undefined}
           accessibilityLabel={`${e.name} ${e.quantity.replace('×', 'times')}, ${formatKcal(e.kcal)} kcal, ${Math.round(e.protein)} grams protein`}
           style={({ pressed }) => [styles.row, pressed && styles.pressed]}
         >
