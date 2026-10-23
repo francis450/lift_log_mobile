@@ -85,8 +85,10 @@ export function estimate(
   return apiCall<EstimateResponse>('POST', 'ai.estimate', input, { credentials, signal, timeoutMs: 45_000 });
 }
 
-export function suggest(credentials: Credentials, date: string, meal: Meal) {
-  return apiCall<SuggestResponse>('POST', 'ai.suggest', { date, meal }, { credentials, timeoutMs: 45_000 });
+/** `exclude`: titles already shown, so "More ideas" brings new ones. */
+export function suggest(credentials: Credentials, date: string, meal: Meal, exclude: string[] = []) {
+  const body = exclude.length ? { date, meal, exclude: JSON.stringify(exclude) } : { date, meal };
+  return apiCall<SuggestResponse>('POST', 'ai.suggest', body, { credentials, timeoutMs: 45_000 });
 }
 
 export function getCheckin(credentials: Credentials, week: number) {

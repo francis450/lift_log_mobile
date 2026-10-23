@@ -1,5 +1,6 @@
 import type { ExerciseInfo, Program } from '@/api/types';
 import program from '@/lib/__tests__/fixtures/program-block2.json';
+import { sessionsByDate } from '@/workout/week';
 import { callSentence } from '@/lib/nextCall';
 import { routineFor } from '@/lib/program';
 
@@ -9,8 +10,11 @@ import {
   dayStatus,
   effortRead,
   fromSession,
+  hasLogged,
   historyFor,
+  needsStart,
   nextItemFor,
+  startDraft,
   summarise,
   targetLine,
   toPayload,
@@ -170,5 +174,65 @@ describe('summary read and day status', () => {
     expect(targetLine(squat, library['Barbell back squat'])).toBe('3 × 6–8 reps · rest 2 min');
     const plank = routineFor(block, '2026-10-07')!.items![0];
     expect(targetLine(plank, library.Plank)).toBe('3 × 45–60 s · rest 90 s');
+  });
+});
+
+describe('starting a workout', () => {
+  const fresh = (): WorkoutDraft =>
+    createDraft({
+      date: '2026-10-13',
+      week: 2,
+      routine: routineFor(block, '2026-10-06')!,
+      suggestions: { 'Barbell back squat': { call: 'hold', kg: 40, reason: '' } },
+      now: new Date('2026-10-13T06:00:00Z'),
+    });
+
+  it('opens a new session as a preview, with weights prefilled but nothing logged', () => {
+    const draft = fresh();
+    expect(hasLogged(draft)).toBe(false);
+    expect(needsStart(draft)).toBe(true);
+  });
+
+  it('treats a session opened before Start existed as not started while nothing is logged', () => {
+    const legacy = fresh();
+    delete legacy.begun;
+    expect(needsStart(legacy)).toBe(true);
+    legacy.rows['Barbell back squat'][0] = { kg: '40', reps: '8', done: false, effort: null };
+    expect(hasLogged(legacy)).toBe(true);
+    expect(needsStart(legacy)).toBe(false);
+  });
+
+  it('counts a ticked set or a ticked deload move as logged', () => {
+    const ticked = fresh();
+    ticked.rows['Barbell back squat'][0] = { ...ticked.rows['Barbell back squat'][0], done: true };
+    expect(needsStart(ticked)).toBe(false);
+    expect(needsStart({ ...fresh(), ticks: { Plank: [1] } })).toBe(false);
+    expect(needsStart({ ...fresh(), ticks: { Plank: [] } })).toBe(true);
+  });
+
+  it('never asks to start a finished session', () => {
+    expect(needsStart({ ...fresh(), status: 'done' })).toBe(false);
+  });
+
+  it('starts the clock when Start is tapped', () => {
+    const started = startDraft(fresh(), new Date('2026-10-13T15:05:00Z'));
+    expect(started.begun).toBe(true);
+    expect(started.started_at).toBe('2026-10-13T15:05:00.000Z');
+    expect(started.client_updated_at).toBe('2026-10-13T15:05:00.000Z');
+    expect(needsStart(started)).toBe(false);
+    // The flag stays on the phone.
+    expect(toPayload(started)).not.toHaveProperty('begun');
+  });
+
+  it('shows Start, not Resume, on Train for a session opened but never started', () => {
+    const server = [
+      { date: '2026-10-13', routine_key: 'lower', routine_name: 'Lower + Walk', sets: 0, status: 'in_progress' as const },
+      { date: '2026-10-12', routine_key: 'upper', routine_name: 'Upper', sets: 4, status: 'in_progress' as const },
+    ];
+    expect(sessionsByDate(server, [fresh()]).has('2026-10-13')).toBe(false);
+    expect(sessionsByDate(server, []).get('2026-10-12')?.status).toBe('in_progress');
+    // Started but nothing logged yet: Resume.
+    const started = startDraft(fresh(), new Date('2026-10-13T15:05:00Z'));
+    expect(sessionsByDate(server, [started]).get('2026-10-13')?.status).toBe('in_progress');
   });
 });

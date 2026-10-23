@@ -14,7 +14,18 @@ import { usePlanChanges } from '@/review/data';
 import { useAuth } from '@/state/auth';
 
 import { loadDraft, saveDraft, useLocalWorkouts, useServerHistories } from './data';
-import { callFor, createDraft, DraftRow, exerciseInfo, fromSession, historyFor, withDeloadRows, WorkoutDraft } from './model';
+import {
+  callFor,
+  createDraft,
+  DraftRow,
+  exerciseInfo,
+  fromSession,
+  historyFor,
+  needsStart,
+  startDraft,
+  withDeloadRows,
+  WorkoutDraft,
+} from './model';
 
 /**
  * @param date the day the session is logged on
@@ -80,7 +91,8 @@ export function useWorkout(date: string, from?: string) {
     void saveDraft(next, sync);
   }, []);
 
-  // Open the saved draft (resume after a kill), else the server's copy, else start a new session.
+  // Open the saved draft (resume after a kill), else the server's copy, else a new one. A new or
+  // never-started session stays on screen only (a preview) until Start workout.
   useEffect(() => {
     if (!ready || !routine || started.current) return;
     started.current = true;
@@ -100,14 +112,25 @@ export function useWorkout(date: string, from?: string) {
         setDraft(existing);
         return;
       }
-      commit(createDraft({ date, week, routine, suggestions, now: new Date() }), true);
+      const fresh = createDraft({ date, week, routine, suggestions, now: new Date() });
+      draftRef.current = fresh;
+      setDraft(fresh);
     })();
   }, [ready, routine, date, week, suggestions, credentials, commit]);
+
+  const preview = !!draft && needsStart(draft);
+
+  /** Start workout: saves the session (locally and to the server) with the clock starting now. */
+  const start = useCallback(() => {
+    const prev = draftRef.current;
+    if (prev) commit(startDraft(prev, new Date()), true);
+  }, [commit]);
 
   const update = useCallback(
     (fn: (d: WorkoutDraft) => WorkoutDraft, sync = false) => {
       const prev = draftRef.current;
-      if (!prev) return;
+      // Nothing is saved before Start workout.
+      if (!prev || needsStart(prev)) return;
       commit({ ...fn(prev), client_updated_at: new Date().toISOString() }, sync);
     },
     [commit],
@@ -204,6 +227,8 @@ export function useWorkout(date: string, from?: string) {
     week,
     items,
     draft,
+    preview,
+    start,
     suggestions,
     placeholders,
     setRow,

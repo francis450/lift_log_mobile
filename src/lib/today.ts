@@ -53,7 +53,8 @@ export function sessionCard(routine: Routine | null, session: Session | null): S
   if (!routine.items?.length) return { kind: 'optional', routine };
   const setsLogged = session?.sets.length ?? 0;
   if (session?.status === 'done') return { kind: 'done', routine, setsLogged };
-  if (session) return { kind: 'resume', routine, setsLogged };
+  // Opened but nothing logged yet: still Start (the workout screen resumes it if it was started).
+  if (session && setsLogged) return { kind: 'resume', routine, setsLogged };
   return { kind: 'start', routine, setsLogged };
 }
 

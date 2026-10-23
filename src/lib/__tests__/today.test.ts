@@ -68,6 +68,10 @@ describe('session card', () => {
     expect(sessionCard(conditioning, session('done'))).toMatchObject({ kind: 'done', setsLogged: 1 });
   });
 
+  it('still says Start for a session opened but with nothing logged', () => {
+    expect(sessionCard(conditioning, { ...session('in_progress'), sets: [] }).kind).toBe('start');
+  });
+
   it('labels the time and chips', () => {
     expect(sessionEyebrow('18:00', '6:00 PM')).toBe('Tonight · 6:00 PM');
     expect(sessionEyebrow('07:00', '7:00 AM')).toBe('Today · 7:00 AM');

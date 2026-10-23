@@ -6,7 +6,7 @@ import { formatTime12 } from '@/lib/dates';
 import { routineFor } from '@/lib/program';
 import { describeSets, shortExerciseName } from '@/lib/today';
 
-import { dayStatus, DayStatus, WorkoutDraft } from './model';
+import { dayStatus, DayStatus, needsStart, WorkoutDraft } from './model';
 
 export interface DaySession {
   status: 'in_progress' | 'done';
@@ -15,13 +15,18 @@ export interface DaySession {
   highlight: Highlight | null;
 }
 
-/** Local drafts win over the server's month rows for the same date. */
+/**
+ * Local drafts win over the server's month rows for the same date. A session opened but never
+ * started (nothing logged) doesn't count, so the day still shows Start.
+ */
 export function sessionsByDate(server: MonthSession[], drafts: WorkoutDraft[]): Map<string, DaySession> {
   const map = new Map<string, DaySession>();
   for (const s of server) {
+    if (s.status === 'in_progress' && !s.sets) continue;
     map.set(s.date, { status: s.status, routine_name: s.routine_name, sets: s.sets, highlight: s.highlight ?? null });
   }
   for (const d of drafts) {
+    if (needsStart(d)) continue;
     const first = d.exercises.find((ex) => (d.rows[ex] ?? []).some((r) => r.reps));
     const highlight = first
       ? {

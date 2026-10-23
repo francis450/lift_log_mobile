@@ -180,6 +180,8 @@ export interface SuggestionOption {
 
 export interface SuggestResponse {
   options: SuggestionOption[];
+  /** This meal's share of what's left (older servers don't send it). */
+  budget?: { kcal: number; protein_g: number };
   model: string;
 }
 

@@ -153,11 +153,14 @@ function FoodDayScreen({ initialDate }: { initialDate: string }) {
         {date === today && ai.ready ? (
           <SuggestionCard
             defaultMeal={nowMeal}
-            current={suggestion.current}
+            state={suggestion.state}
+            kcalLeft={kcalTarget - sum.kcal}
+            proteinLeft={Math.max(0, (proteinTarget ?? 130) - sum.protein_g)}
             loading={suggestion.loading}
             error={suggestion.error}
             onAsk={(meal) => void suggestion.ask(meal)}
-            onOther={() => void suggestion.next()}
+            onMore={() => void suggestion.more()}
+            onIndex={(index) => void suggestion.setIndex(index)}
             onClose={() => void suggestion.dismiss()}
             onAdd={(meal, option) => {
               addMany(meal, option.items, 'suggestion');

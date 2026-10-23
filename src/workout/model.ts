@@ -34,6 +34,8 @@ export interface WorkoutDraft {
   /** Home deload: the round on screen and the moves ticked per round. */
   round?: number;
   ticks?: Record<string, number[]>;
+  /** Start workout was tapped. Phone only; drafts saved before this field count as begun once anything is logged. */
+  begun?: boolean;
 }
 
 const FALLBACK_EXERCISE: ExerciseInfo = { type: 'load', increment_kg: 2.5, form_url: null };
@@ -96,6 +98,26 @@ export function createDraft(params: {
     current: 0,
     restEndsAt: null,
   };
+}
+
+/** Anything entered: a set with reps or ticked, or a deload move ticked. */
+export function hasLogged(draft: WorkoutDraft): boolean {
+  const rows = Object.values(draft.rows).flat();
+  return rows.some((r) => r.reps || r.done) || Object.values(draft.ticks ?? {}).some((rounds) => rounds.length > 0);
+}
+
+/**
+ * Opened but not started: the day's exercises are shown with a Start button, no timer, nothing saved.
+ * Also covers sessions that were opened before Start existed and never had anything logged.
+ */
+export function needsStart(draft: WorkoutDraft): boolean {
+  return draft.status === 'in_progress' && !draft.begun && !hasLogged(draft);
+}
+
+/** Start workout: the clock starts now. */
+export function startDraft(draft: WorkoutDraft, now: Date): WorkoutDraft {
+  const iso = now.toISOString();
+  return { ...draft, begun: true, started_at: iso, client_updated_at: iso };
 }
 
 /** The API body. Rows with no reps entered are not saved. */

@@ -1,6 +1,6 @@
 import { useKeepAwake } from 'expo-keep-awake';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ChevronLeft } from 'lucide-react-native';
+import { ChevronLeft, Play } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,6 +17,7 @@ import { ExerciseCard } from '@/workout/ExerciseCard';
 import { LiveRestTimer } from '@/workout/LiveRestTimer';
 import { exerciseInfo, targetLine } from '@/workout/model';
 import { useWorkout } from '@/workout/useWorkout';
+import { WorkoutPreview } from '@/workout/WorkoutPreview';
 
 function Elapsed({ since }: { since: string }) {
   const [now, setNow] = useState(() => Date.now());
@@ -32,8 +33,13 @@ function Elapsed({ since }: { since: string }) {
   );
 }
 
-export default function WorkoutScreen() {
+/** The screen stays on only once the workout has started. */
+function KeepAwake() {
   useKeepAwake();
+  return null;
+}
+
+export default function WorkoutScreen() {
   const tz = useTimeZone();
   const params = useLocalSearchParams<{ date?: string; from?: string }>();
   const date = params.date ?? todayIn(tz);
@@ -74,7 +80,7 @@ export default function WorkoutScreen() {
           {title}
         </Text>
       </View>
-      {draft && draft.status === 'in_progress' ? <Elapsed since={draft.started_at} /> : null}
+      {draft && draft.status === 'in_progress' && !w.preview ? <Elapsed since={draft.started_at} /> : null}
     </View>
   );
 
@@ -99,9 +105,31 @@ export default function WorkoutScreen() {
     );
   }
 
+  if (w.preview) {
+    const count = w.items.length;
+    return (
+      <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
+        {header(
+          `${formatDayShort(date)} · ${count} ${isDeload ? (count === 1 ? 'move' : 'moves') : count === 1 ? 'exercise' : 'exercises'}`,
+          routine.name,
+        )}
+        <WorkoutPreview routine={routine} library={w.library} calls={isDeload ? undefined : w.suggestions} />
+        <View style={styles.footer}>
+          <Button
+            label="Start workout"
+            icon={<Play size={20} strokeWidth={2} color={colors.white} />}
+            onPress={w.start}
+            style={styles.flex}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   if (isDeload) {
     return (
       <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
+        <KeepAwake />
         {header(`${formatDayShort(date)} · Week ${w.week} · Exam week`, routine.name)}
         <DeloadView routine={routine} draft={draft} onRound={w.setRound} onTick={w.toggleTick} />
         <View style={styles.footer}>
@@ -123,6 +151,7 @@ export default function WorkoutScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
+      <KeepAwake />
       {header(
         `${formatDayShort(date)} · ${editing ? 'Editing · ' : ''}Exercise ${index + 1} of ${items.length}`,
         routine.name,

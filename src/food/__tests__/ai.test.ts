@@ -1,6 +1,6 @@
 import { addFoodsLabel, chosenItems, estimateRows } from '../model';
 import { resizeTarget } from '../photo';
-import { isShowable, KEEP_MS, SuggestionState } from '../suggestion';
+import { appendOptions, isShowable, KEEP_MS, leavesLine, MAX_OPTIONS, SuggestionState } from '../suggestion';
 
 jest.mock('expo-image-manipulator', () => ({ ImageManipulator: {}, SaveFormat: { JPEG: 'jpeg' } }));
 jest.mock('expo-image-picker', () => ({}));
@@ -51,5 +51,59 @@ describe('suggestions on request', () => {
     expect(isShowable({ ...saved, dismissed: true }, now)).toBe(false);
     expect(isShowable({ ...saved, options: [] }, now)).toBe(false);
     expect(isShowable(null, now)).toBe(false);
+  });
+
+  it('still shows an answer saved before meal budgets', () => {
+    expect(saved.budget).toBeUndefined();
+    expect(isShowable(saved, now)).toBe(true);
+  });
+});
+
+describe('more ideas', () => {
+  const opt = (title: string) => ({ title, why: '', items: [] });
+  const state: SuggestionState = {
+    meal: 'lunch',
+    fetchedAt: 0,
+    options: [opt('Bean stew'), opt('Githeri')],
+    index: 1,
+    dismissed: false,
+  };
+
+  it('adds new options after the ones shown and puts the first new one on screen', () => {
+    const next = appendOptions(state, [opt('Ndengu and rice'), opt('Fish and ugali')]);
+    expect(next.options.map((o) => o.title)).toEqual(['Bean stew', 'Githeri', 'Ndengu and rice', 'Fish and ugali']);
+    expect(next.index).toBe(2);
+  });
+
+  it('skips repeats, ignoring case, and stays put when nothing is new', () => {
+    const next = appendOptions(state, [opt('bean stew '), opt('Githeri')]);
+    expect(next.options).toHaveLength(2);
+    expect(next.index).toBe(1);
+    expect(appendOptions(state, [opt('Pilau'), opt('pilau')]).options).toHaveLength(3);
+  });
+
+  it(`keeps at most ${MAX_OPTIONS}`, () => {
+    const many = Array.from({ length: 20 }, (_, i) => opt(`Meal ${i}`));
+    expect(appendOptions(state, many).options).toHaveLength(MAX_OPTIONS);
+  });
+});
+
+describe('what an option leaves for later', () => {
+  const option = {
+    title: 'Bean stew with chicken',
+    why: '',
+    items: [
+      { food_name: 'Bean stew', portion: '300 g', kcal: 330, protein_g: 18 },
+      { food_name: 'Chicken breast', portion: '150 g', kcal: 250, protein_g: 46 },
+    ],
+  };
+
+  it('subtracts the option from what is left today', () => {
+    expect(leavesLine(option, 1102, 105)).toBe('Leaves 522 kcal · 41 g protein for later');
+  });
+
+  it('says how far over an option goes, and never shows negative protein', () => {
+    expect(leavesLine(option, 400, 30)).toBe("180 kcal over what's left today");
+    expect(leavesLine(option, 600, 30)).toBe('Leaves 20 kcal · 0 g protein for later');
   });
 });
