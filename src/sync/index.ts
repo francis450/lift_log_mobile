@@ -5,7 +5,16 @@ import { AppState } from 'react-native';
 
 import { ApiError } from '@/api/client';
 import * as api from '@/api/endpoints';
-import type { CheckinPayload, FoodDay, FoodItem, Profile, ProfileUpdate, Session, SessionPayload } from '@/api/types';
+import type {
+  CheckinPayload,
+  FoodDay,
+  FoodItem,
+  Profile,
+  ProfileUpdate,
+  Session,
+  SessionDelete,
+  SessionPayload,
+} from '@/api/types';
 import { workoutPut } from '@/db/database';
 import { markFoodDaySynced } from '@/food/store';
 import { routineFor } from '@/lib/program';
@@ -24,10 +33,14 @@ async function send(item: OutboxItem): Promise<void> {
     case 'profile':
       queryClient.setQueryData(['profile'], await api.saveProfile(credentials, item.payload as ProfileUpdate));
       return;
-    case 'session':
-      await api.saveSession(credentials, item.payload as SessionPayload);
+    case 'session': {
+      // Cancel workout queues a delete in the day's slot, replacing any pending save.
+      const payload = item.payload as SessionPayload | SessionDelete;
+      if ('delete' in payload) await api.deleteSession(credentials, payload);
+      else await api.saveSession(credentials, payload);
       void queryClient.invalidateQueries({ queryKey: ['sessions-month'] });
       return;
+    }
     case 'food_day': {
       const sent = item.payload as FoodDay;
       await markFoodDaySynced(sent, await api.saveFoodDay(credentials, sent));

@@ -13,7 +13,7 @@ import { reviewDelta } from '@/lib/review';
 import { usePlanChanges } from '@/review/data';
 import { useAuth } from '@/state/auth';
 
-import { loadDraft, saveDraft, useLocalWorkouts, useServerHistories } from './data';
+import { cancelWorkout, loadDraft, saveDraft, useLocalWorkouts, useServerHistories } from './data';
 import {
   callFor,
   createDraft,
@@ -21,7 +21,10 @@ import {
   exerciseInfo,
   fromSession,
   historyFor,
+  isPerSide,
   needsStart,
+  newSetRows,
+  placeholdersFor,
   startDraft,
   withDeloadRows,
   WorkoutDraft,
@@ -68,18 +71,20 @@ export function useWorkout(date: string, from?: string) {
     return out;
   }, [program, items, library, histories, plan.data]);
 
-  /** Placeholder reps per set: last session's, else the bottom of the target range. */
+  const [draft, setDraft] = useState<WorkoutDraft | null>(null);
+  /** The draft came from the phone or the server, so Cancel workout has something to remove. */
+  const [stored, setStored] = useState(false);
+
+  /** Placeholder reps per row: last session's for that set (and side), else the bottom of the target range. */
   const placeholders = useMemo(() => {
     const out: Record<string, string[]> = {};
     for (const item of items) {
-      const last = histories[item.exercise]?.[0]?.sets.map((s) => formatNumber(s.amount)) ?? [];
+      const last = histories[item.exercise]?.[0]?.sets ?? [];
       const fallback = formatNumber(parseRepRange(item.reps)?.[0] ?? null);
-      out[item.exercise] = Array.from({ length: 12 }, (_, i) => last[i] ?? last[last.length - 1] ?? fallback);
+      out[item.exercise] = placeholdersFor(draft?.rows[item.exercise] ?? [], last, fallback);
     }
     return out;
-  }, [items, histories]);
-
-  const [draft, setDraft] = useState<WorkoutDraft | null>(null);
+  }, [items, histories, draft?.rows]);
   const draftRef = useRef<WorkoutDraft | null>(null);
   const started = useRef(false);
   // Wait for the plan too, so a review's weight change is in the prefilled weights.
@@ -110,6 +115,7 @@ export function useWorkout(date: string, from?: string) {
         }
         draftRef.current = existing;
         setDraft(existing);
+        setStored(true);
         return;
       }
       const fresh = createDraft({ date, week, routine, suggestions, now: new Date() });
@@ -123,7 +129,10 @@ export function useWorkout(date: string, from?: string) {
   /** Start workout: saves the session (locally and to the server) with the clock starting now. */
   const start = useCallback(() => {
     const prev = draftRef.current;
-    if (prev) commit(startDraft(prev, new Date()), true);
+    if (prev) {
+      commit(startDraft(prev, new Date()), true);
+      setStored(true);
+    }
   }, [commit]);
 
   const update = useCallback(
@@ -177,14 +186,25 @@ export function useWorkout(date: string, from?: string) {
     (exercise: string) =>
       update((d) => {
         const rows = d.rows[exercise] ?? [];
-        const kg = rows[rows.length - 1]?.kg ?? '';
-        return { ...d, rows: { ...d.rows, [exercise]: [...rows, { kg, reps: '', done: false, effort: null }] } };
+        const perSide = isPerSide(items.find((i) => i.exercise === exercise));
+        return { ...d, rows: { ...d.rows, [exercise]: [...rows, ...newSetRows(rows, perSide)] } };
       }, true),
-    [update],
+    [update, items],
   );
 
   const goTo = useCallback((index: number) => update((d) => ({ ...d, current: index }), true), [update]);
   const setNote = useCallback((note: string) => update((d) => ({ ...d, note }), true), [update]);
+  /** Fix the start time (UTC ISO), e.g. after starting by mistake. Restart clock passes now. */
+  const setStartedAt = useCallback((iso: string) => update((d) => ({ ...d, started_at: iso }), true), [update]);
+
+  /** Cancel workout: removes the session from the phone and the server. */
+  const cancel = useCallback(async () => {
+    const prev = draftRef.current;
+    draftRef.current = null;
+    setDraft(null);
+    setStored(false);
+    if (prev) await cancelWorkout(prev.date);
+  }, []);
   const addRest = useCallback(
     (seconds: number) => update((d) => ({ ...d, restEndsAt: Math.max(d.restEndsAt ?? 0, Date.now()) + seconds * 1000 })),
     [update],
@@ -228,7 +248,10 @@ export function useWorkout(date: string, from?: string) {
     items,
     draft,
     preview,
+    stored,
     start,
+    setStartedAt,
+    cancel,
     suggestions,
     placeholders,
     setRow,

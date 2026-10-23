@@ -1,6 +1,6 @@
 import { useKeepAwake } from 'expo-keep-awake';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ChevronLeft, Play } from 'lucide-react-native';
+import { ChevronLeft, Clock, Play } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,7 +9,8 @@ import { BottomSheet } from '@/components/BottomSheet';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { useTimeZone } from '@/hooks/queries';
-import { formatDayShort, todayIn } from '@/lib/dates';
+import { TimePickerRow } from '@/components/TimePickerRow';
+import { formatDayShort, hhmmIn, isoAt, todayIn } from '@/lib/dates';
 import { formatSeconds } from '@/components/RestTimer';
 import { colors, fonts, type } from '@/theme';
 import { DeloadView } from '@/workout/DeloadView';
@@ -19,7 +20,8 @@ import { exerciseInfo, targetLine } from '@/workout/model';
 import { useWorkout } from '@/workout/useWorkout';
 import { WorkoutPreview } from '@/workout/WorkoutPreview';
 
-function Elapsed({ since }: { since: string }) {
+/** The workout clock. Tapping it opens the clock sheet (fix the start time, restart, cancel). */
+function Elapsed({ since, onPress }: { since: string; onPress: () => void }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -27,9 +29,30 @@ function Elapsed({ since }: { since: string }) {
   }, []);
   const seconds = Math.max(0, Math.floor((now - Date.parse(since)) / 1000));
   return (
-    <Text accessibilityLabel={`${Math.floor(seconds / 60)} minutes in`} style={styles.elapsed}>
-      {formatSeconds(seconds)}
-    </Text>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${Math.floor(seconds / 60)} minutes in. Change start time or cancel`}
+      onPress={onPress}
+      style={styles.clock}
+    >
+      <Clock size={16} strokeWidth={2} color={colors.ink2} />
+      <Text style={styles.elapsed}>{formatSeconds(seconds)}</Text>
+    </Pressable>
+  );
+}
+
+function confirmCancel(logged: number): Promise<boolean> {
+  return new Promise((resolve) =>
+    Alert.alert(
+      'Cancel workout?',
+      logged
+        ? `The ${logged} ${logged === 1 ? 'set' : 'sets'} you logged will be deleted. This can't be undone.`
+        : 'Nothing has been logged. The session will be removed.',
+      [
+        { text: 'Keep workout', style: 'cancel', onPress: () => resolve(false) },
+        { text: 'Cancel workout', style: 'destructive', onPress: () => resolve(true) },
+      ],
+    ),
   );
 }
 
@@ -45,7 +68,17 @@ export default function WorkoutScreen() {
   const date = params.date ?? todayIn(tz);
   const w = useWorkout(date, params.from);
   const [noteOpen, setNoteOpen] = useState(false);
+  const [clockOpen, setClockOpen] = useState(false);
   const scroll = useRef<ScrollView>(null);
+
+  async function cancel() {
+    const logged = draft ? Object.values(draft.rows).flat().filter((r) => r.reps).length : 0;
+    if (!(await confirmCancel(logged))) return;
+    setClockOpen(false);
+    await w.cancel();
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
+  }
 
   const draft = w.draft;
   const routine = w.routine;
@@ -80,7 +113,9 @@ export default function WorkoutScreen() {
           {title}
         </Text>
       </View>
-      {draft && draft.status === 'in_progress' && !w.preview ? <Elapsed since={draft.started_at} /> : null}
+      {draft && draft.status === 'in_progress' && !w.preview ? (
+        <Elapsed since={draft.started_at} onPress={() => setClockOpen(true)} />
+      ) : null}
     </View>
   );
 
@@ -115,16 +150,31 @@ export default function WorkoutScreen() {
         )}
         <WorkoutPreview routine={routine} library={w.library} calls={isDeload ? undefined : w.suggestions} />
         <View style={styles.footer}>
+          {/* A session opened earlier but never started (still saved as in progress) can be removed. */}
+          {w.stored ? <Button variant="secondary" label="Cancel workout" onPress={cancel} style={styles.flex} /> : null}
           <Button
             label="Start workout"
             icon={<Play size={20} strokeWidth={2} color={colors.white} />}
             onPress={w.start}
-            style={styles.flex}
+            style={w.stored ? styles.flex2 : styles.flex}
           />
         </View>
       </SafeAreaView>
     );
   }
+
+  const clockSheet = clockOpen ? (
+    <ClockSheet
+      startedAt={draft.started_at}
+      timeZone={tz}
+      onSetStart={(iso) => {
+        w.setStartedAt(iso);
+        setClockOpen(false);
+      }}
+      onCancel={cancel}
+      onClose={() => setClockOpen(false)}
+    />
+  ) : null;
 
   if (isDeload) {
     return (
@@ -135,6 +185,7 @@ export default function WorkoutScreen() {
         <View style={styles.footer}>
           <Button label={editing ? 'Save changes' : 'Finish deload session'} onPress={finish} style={styles.flex} />
         </View>
+        {clockSheet}
       </SafeAreaView>
     );
   }
@@ -219,6 +270,7 @@ export default function WorkoutScreen() {
         )}
       </View>
 
+      {clockSheet}
       {noteOpen ? (
         <NoteSheet
           initial={draft.note}
@@ -230,6 +282,45 @@ export default function WorkoutScreen() {
         />
       ) : null}
     </SafeAreaView>
+  );
+}
+
+/** Started by mistake: set the real start time, restart the clock from now, or cancel the workout. */
+function ClockSheet({
+  startedAt,
+  timeZone,
+  onSetStart,
+  onCancel,
+  onClose,
+}: {
+  startedAt: string;
+  timeZone: string;
+  onSetStart: (iso: string) => void;
+  onCancel: () => void;
+  onClose: () => void;
+}) {
+  const day = todayIn(timeZone, new Date(startedAt));
+  return (
+    <BottomSheet visible title="Workout clock" onClose={onClose}>
+      <View style={styles.sheetBody}>
+        <Text style={type.secondary}>Started by mistake? Set when you really started, or restart the clock from now.</Text>
+        <TimePickerRow
+          first
+          label="Start time"
+          value={hhmmIn(startedAt, timeZone)}
+          onChange={(hhmm) => {
+            const iso = isoAt(day, hhmm, timeZone);
+            if (Date.parse(iso) > Date.now()) {
+              Alert.alert('Start time is in the future', 'Pick a time before now.');
+              return;
+            }
+            onSetStart(iso);
+          }}
+        />
+        <Button variant="secondary" label="Restart clock" onPress={() => onSetStart(new Date().toISOString())} />
+        <Button variant="danger" label="Cancel workout" onPress={onCancel} />
+      </View>
+    </BottomSheet>
   );
 }
 
@@ -258,7 +349,9 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 4 },
   back: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   headerText: { flex: 1, minWidth: 0 },
-  elapsed: { fontFamily: fonts.mono, fontSize: 14, color: colors.ink2, paddingRight: 8 },
+  clock: { minHeight: 44, minWidth: 44, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  elapsed: { fontFamily: fonts.mono, fontSize: 14, color: colors.ink2 },
+  sheetBody: { gap: 12 },
   progress: { height: 4, marginHorizontal: 20, borderRadius: 2, backgroundColor: colors.line, overflow: 'hidden' },
   progressFill: { height: '100%', backgroundColor: colors.accent },
   main: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 12, gap: 12 },

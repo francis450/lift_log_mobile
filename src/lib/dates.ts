@@ -72,6 +72,25 @@ export function formatTime12(hhmm: string | null | undefined): string {
   return `${hour}:${String(m).padStart(2, '0')} ${suffix}`;
 }
 
+/** A UTC time as local "HH:MM" in a time zone (for the time pickers). */
+export function hhmmIn(iso: string, timeZone: string = DEFAULT_TZ): string {
+  const minutes = localParts(timeZone, new Date(iso)).minutes;
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+}
+
+/** Local day and "HH:MM" in a time zone as a UTC ISO time. */
+export function isoAt(day: string, hhmm: string, timeZone: string = DEFAULT_TZ): string {
+  const [h, m] = hhmm.split(':').map(Number);
+  const wanted = parseDay(day).getTime() + (h * 60 + m) * 60_000;
+  // Guess with the zone's offset at that moment, then correct once for a DST change in between.
+  let utc = wanted;
+  for (let i = 0; i < 2; i++) {
+    const local = localParts(timeZone, new Date(utc));
+    utc += wanted - (parseDay(local.date).getTime() + local.minutes * 60_000);
+  }
+  return new Date(utc).toISOString();
+}
+
 /** ISO 8601 UTC with milliseconds, the API's time format. */
 export function nowUtcIso(now: Date = new Date()): string {
   return now.toISOString();

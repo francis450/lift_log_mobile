@@ -25,6 +25,9 @@ export interface RuleSet {
   kg: number | null;
   amount: number;
   effort: Effort | null;
+  /** Per-side exercises log each set as an L and an R entry sharing a set_no. */
+  side?: 'L' | 'R' | null;
+  set_no?: number;
 }
 
 export interface RuleSession {
@@ -68,8 +71,60 @@ function fmt(n: number): string {
   return Number.isInteger(n) ? String(n) : String(round2(n));
 }
 
+/** The next weight the equipment has: the smallest multiple of inc above w. */
+function stepUp(w: number, inc: number): number {
+  if (inc <= 0) return round2(w);
+  return round2((Math.floor(w / inc + 1e-9) + 1) * inc);
+}
+
+/** The largest multiple of inc below w, not below 0. */
+function stepDown(w: number, inc: number): number {
+  if (inc <= 0) return round2(w);
+  return Math.max(round2((Math.ceil(w / inc - 1e-9) - 1) * inc), 0);
+}
+
+/** The nearest multiple of inc. */
+function snap(kg: number, inc: number): number {
+  return inc > 0 ? round2(Math.floor(kg / inc + 0.5) * inc) : round2(kg);
+}
+
+/** A step of more than 10% of the weight (dumbbells 5 -> 7.5 kg is +50%). */
+export function bigStep(w: number, inc: number): boolean {
+  return w > 0 && inc > w * 0.1;
+}
+
+const EFFORT_RANK: Record<Effort, number> = { easy: 1, right: 2, hard: 3 };
+
+/**
+ * Per-side sets (side L and R sharing a set_no) become one set judged on the weaker side:
+ * the lower kg, the lower amount and the harder effort. Sets without a side pass through.
+ */
+export function weakerSide(sets: RuleSet[]): RuleSet[] {
+  const out: RuleSet[] = [];
+  const bySetNo = new Map<number | undefined, RuleSet>();
+  for (const s of sets) {
+    if (s.side !== 'L' && s.side !== 'R') {
+      out.push(s);
+      continue;
+    }
+    const pair = bySetNo.get(s.set_no);
+    if (!pair) {
+      const first: RuleSet = { kg: s.kg, amount: s.amount, effort: s.effort };
+      bySetNo.set(s.set_no, first);
+      out.push(first);
+      continue;
+    }
+    if (s.kg !== null) pair.kg = pair.kg === null ? s.kg : Math.min(pair.kg, s.kg);
+    pair.amount = Math.min(pair.amount, s.amount);
+    const efforts = [pair.effort, s.effort].filter((e): e is Effort => !!e);
+    pair.effort = efforts.length ? efforts.reduce((a, b) => (EFFORT_RANK[b] > EFFORT_RANK[a] ? b : a)) : null;
+  }
+  return out;
+}
+
 /**
  * history: earlier sessions containing this exercise, newest first, each with only this exercise's sets.
+ * Per-side sets are judged on the weaker side (weakerSide).
  */
 export function nextCall(
   exercise: RuleExercise,
@@ -78,7 +133,9 @@ export function nextCall(
   options: RuleOptions = {},
 ): NextCall {
   const isGym = exercise.type === 'load' || exercise.type === 'distance';
-  const sessions = history.filter((s) => s.sets.length > 0 && !(isGym && s.deload));
+  const sessions = history
+    .filter((s) => s.sets.length > 0 && !(isGym && s.deload))
+    .map((s) => ({ ...s, sets: weakerSide(s.sets) }));
 
   // 1. Test routine.
   if (target.test) {
@@ -101,7 +158,7 @@ export function nextCall(
   const result = weightCall(exercise, target, range, sessions);
   const delta = options.reviewDeltaKg ?? 0;
   if (delta && result.kg !== undefined) {
-    return { call: result.call, kg: Math.max(round2(result.kg + delta), 0), reason: 'From your weekly review' };
+    return { call: result.call, kg: Math.max(snap(result.kg + delta, exercise.increment_kg), 0), reason: 'From your weekly review' };
   }
   return result;
 }
@@ -126,12 +183,14 @@ function weightCall(
 
   // 4. Every work set at the top of the range.
   if (work.length >= target.sets && work.every((s) => s.amount >= b)) {
-    return { call: 'up', kg: round2(w + inc), reason: 'Hit the top of the range' };
+    return { call: 'up', kg: stepUp(w, inc), reason: 'Hit the top of the range' };
   }
 
   // The last two sessions at this weight.
   const atW = sessions.filter((s) => topKg(s) === w).slice(0, 2);
   if (atW.length === 2) {
+    // 5 is skipped on a big step: stay and build reps to the top of the range first.
+    const big = bigStep(w, inc);
     // 5. Felt easy two sessions running.
     const easy = atW.every((s) => {
       const sets = workSets(s, w);
@@ -143,7 +202,7 @@ function weightCall(
         !sets.some((x) => x.effort === 'hard')
       );
     });
-    if (easy) return { call: 'up', kg: round2(w + inc), reason: 'Felt easy two sessions running' };
+    if (!big && easy) return { call: 'up', kg: stepUp(w, inc), reason: 'Felt easy two sessions running' };
 
     // 6. Struggling two sessions running.
     const hard = atW.every((s) => {
@@ -153,7 +212,7 @@ function weightCall(
       return sets.length > 0 && hardCount * 2 >= sets.length && shortCount * 2 >= sets.length;
     });
     if (hard) {
-      return { call: 'down', kg: Math.max(round2(w - inc), 0), reason: 'Two hard sessions: drop a step and rebuild' };
+      return { call: 'down', kg: stepDown(w, inc), reason: 'Two hard sessions: drop a step and rebuild' };
     }
   }
 

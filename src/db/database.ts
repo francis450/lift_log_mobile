@@ -91,6 +91,13 @@ export async function workoutPut(date: string, draft: unknown): Promise<void> {
   );
 }
 
+/** Cancel workout: the day's draft is removed from the phone. */
+export async function workoutDelete(date: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM workouts WHERE date = ?', [date]);
+  await db.runAsync('DELETE FROM cache WHERE key = ?', [`session:${date}`]);
+}
+
 export async function workoutAll<T>(): Promise<T[]> {
   const db = await getDb();
   const rows = await db.getAllAsync<{ draft: string }>('SELECT draft FROM workouts ORDER BY date DESC');

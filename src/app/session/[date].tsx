@@ -1,21 +1,25 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { Check } from 'lucide-react-native';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Check, Clock } from 'lucide-react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import type { Session } from '@/api/types';
+import type { Routine, Session } from '@/api/types';
+import { BottomSheet } from '@/components/BottomSheet';
 import { Button } from '@/components/Button';
 import { CallChip } from '@/components/CallChip';
 import { Card } from '@/components/Card';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { StatTile } from '@/components/StatTile';
-import { useProfile } from '@/hooks/queries';
-import { addDays, formatDayShort } from '@/lib/dates';
+import { TimePickerRow } from '@/components/TimePickerRow';
+import { useProfile, useTimeZone } from '@/hooks/queries';
+import { addDays, formatDayShort, hhmmIn, isoAt } from '@/lib/dates';
 import { callLabel, chipKind } from '@/lib/nextCall';
+import { routineFor } from '@/lib/program';
 import { formatKcal } from '@/lib/targets';
 import { shortExerciseName } from '@/lib/today';
-import { colors, fonts, radii, type } from '@/theme';
-import { useLocalWorkouts, useServerHistories, useSessionForDate } from '@/workout/data';
+import { colors, fonts, MIN_TAP, radii, type } from '@/theme';
+import { saveSessionTimes, useLocalWorkouts, useServerHistories, useSessionForDate } from '@/workout/data';
 import { callFor, effortRead, exerciseInfo, historyFor, nextItemFor, summarise } from '@/workout/model';
 
 export default function SessionSummaryScreen() {
@@ -45,6 +49,8 @@ export default function SessionSummaryScreen() {
 }
 
 function Summary({ session }: { session: Session }) {
+  const tz = useTimeZone();
+  const [timesOpen, setTimesOpen] = useState(false);
   const profile = useProfile().data;
   const program = profile?.program ?? null;
   const library = profile?.exercises;
@@ -87,6 +93,10 @@ function Summary({ session }: { session: Session }) {
           <StatTile value={String(summary.setsLogged)} caption="sets logged" />
           <StatTile value={`${formatKcal(summary.totalKg)} kg`} caption="total lifted" />
         </View>
+        <Pressable accessibilityRole="button" onPress={() => setTimesOpen(true)} style={styles.editTimes}>
+          <Clock size={16} strokeWidth={2} color={colors.accent} />
+          <Text style={styles.editTimesText}>Edit times</Text>
+        </Pressable>
 
         <Card style={styles.gap10}>
           <View style={styles.rowBetween}>
@@ -149,7 +159,63 @@ function Summary({ session }: { session: Session }) {
         />
         <Button label="Done" onPress={done} style={styles.flex} />
       </View>
+      {timesOpen ? (
+        <TimesSheet
+          session={session}
+          timeZone={tz}
+          routine={program ? routineFor(program, session.session_date) : null}
+          onClose={() => setTimesOpen(false)}
+        />
+      ) : null}
     </SafeAreaView>
+  );
+}
+
+/** Fix a session's start and finish times, on the session's day. */
+function TimesSheet({
+  session,
+  timeZone,
+  routine,
+  onClose,
+}: {
+  session: Session;
+  timeZone: string;
+  routine: Routine | null;
+  onClose: () => void;
+}) {
+  const fallback = session.finished_at ?? session.client_updated_at ?? new Date().toISOString();
+  const [start, setStart] = useState(hhmmIn(session.started_at ?? fallback, timeZone));
+  const [end, setEnd] = useState(hhmmIn(session.finished_at ?? fallback, timeZone));
+  const [saving, setSaving] = useState(false);
+  const day = session.session_date;
+  const startIso = isoAt(day, start, timeZone);
+  const endIso = isoAt(day, end, timeZone);
+  const valid = Date.parse(endIso) > Date.parse(startIso);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await saveSessionTimes(day, { started_at: startIso, finished_at: endIso }, routine);
+      onClose();
+    } catch (e) {
+      Alert.alert("Couldn't save the times", (e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <BottomSheet visible title="Edit times" onClose={onClose}>
+      <View style={styles.sheetBody}>
+        <Text style={type.secondary}>Times on {formatDayShort(day)}. The duration is worked out from these.</Text>
+        <View>
+          <TimePickerRow first label="Started" value={start} onChange={setStart} />
+          <TimePickerRow label="Finished" value={end} onChange={setEnd} />
+        </View>
+        {valid ? null : <Text style={styles.error}>Finish must be after start.</Text>}
+        <Button label="Save times" onPress={save} disabled={!valid} loading={saving} />
+      </View>
+    </BottomSheet>
   );
 }
 
@@ -177,4 +243,8 @@ const styles = StyleSheet.create({
   gap10: { gap: 10 },
   gap4: { gap: 4, borderRadius: radii.button },
   footer: { flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 },
+  editTimes: { alignSelf: 'flex-start', minHeight: MIN_TAP, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  editTimesText: { fontFamily: fonts.bodySemi, fontSize: 14, color: colors.accent },
+  sheetBody: { gap: 12 },
+  error: { fontFamily: fonts.body, fontSize: 13, color: colors.hold },
 });

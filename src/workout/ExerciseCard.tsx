@@ -8,10 +8,10 @@ import { CallChip } from '@/components/CallChip';
 import { Card } from '@/components/Card';
 import { EffortPicker } from '@/components/EffortPicker';
 import { SetRow } from '@/components/SetRow';
-import { callSentence, chipKind, Effort, NextCall } from '@/lib/nextCall';
+import { bigStep, callSentence, chipKind, Effort, NextCall } from '@/lib/nextCall';
 import { colors, fonts, type } from '@/theme';
 
-import { amountUnit, DraftRow, targetLine, usesKg } from './model';
+import { amountUnit, DraftRow, setNumbers, targetLine, usesKg } from './model';
 
 interface Props {
   item: RoutineItem;
@@ -31,6 +31,10 @@ export function ExerciseCard({ item, info, call, rows, placeholders, onChangeRow
   const showKg = usesKg(info);
   const unit = amountUnit(info);
   const active = rows.findIndex((r) => !r.done);
+  const numbers = setNumbers(rows);
+  const sided = rows.some((r) => r.side);
+  // Same test as the add-weight rule: a step over 10% of the weight gets no early move.
+  const bigJump = call?.kg !== undefined && bigStep(call.kg, info.increment_kg);
   return (
     <Card style={styles.card}>
       {item.finisher ? <Text style={[type.eyebrow, styles.finisher]}>Forearm finisher</Text> : null}
@@ -57,8 +61,8 @@ export function ExerciseCard({ item, info, call, rows, placeholders, onChangeRow
       {call ? <CallChip kind={chipKind(call.call)} label={callSentence(call)} /> : null}
 
       <View style={styles.headerRow}>
-        <Text style={[type.eyebrow, styles.setCol]}>Set</Text>
-        {showKg ? <Text style={[type.eyebrow, styles.flex]}>kg</Text> : null}
+        <Text style={[type.eyebrow, styles.setCol, sided && styles.setColSide]}>Set</Text>
+        {showKg ? <Text style={[type.eyebrow, styles.flex]}>{info.pair ? 'kg each' : 'kg'}</Text> : null}
         <Text style={[type.eyebrow, styles.flex]}>{HEADER[unit]}</Text>
         <View style={styles.tickCol} />
       </View>
@@ -66,7 +70,9 @@ export function ExerciseCard({ item, info, call, rows, placeholders, onChangeRow
       {rows.map((row, i) => (
         <Fragment key={i}>
           <SetRow
-            setNo={i + 1}
+            setNo={numbers[i]}
+            side={row.side}
+            kgLabel={info.pair ? 'kg per dumbbell' : 'kg'}
             kg={row.kg}
             reps={row.reps}
             repsPlaceholder={placeholders[i]}
@@ -79,7 +85,7 @@ export function ExerciseCard({ item, info, call, rows, placeholders, onChangeRow
             onToggleDone={() => onToggleDone(i)}
           />
           {row.done ? (
-            <View style={styles.effort}>
+            <View style={[styles.effort, sided && styles.effortSide]}>
               <EffortPicker value={row.effort} onChange={(effort) => onEffort(i, effort)} />
             </View>
           ) : null}
@@ -87,8 +93,9 @@ export function ExerciseCard({ item, info, call, rows, placeholders, onChangeRow
       ))}
 
       <Text style={styles.legend}>
-        Easy: 3+ more reps left. Right: 1–2 left. Hard: nothing left. Two easy sessions in a row moves the weight up
-        early.
+        {bigJump
+          ? 'Easy: 3+ more reps left. Right: 1–2 left. Hard: nothing left. The next weight is a big jump, so reach the top of the range on every set first.'
+          : 'Easy: 3+ more reps left. Right: 1–2 left. Hard: nothing left. Two easy sessions in a row moves the weight up early.'}
       </Text>
       <Pressable accessibilityRole="button" onPress={onAddSet} style={styles.addSet}>
         <Text style={styles.addSetText}>+ Add set</Text>
@@ -117,9 +124,11 @@ const styles = StyleSheet.create({
   formText: { fontFamily: fonts.bodySemi, fontSize: 13, color: colors.accent },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   setCol: { width: 24, textAlign: 'center' },
+  setColSide: { width: 32 },
   flex: { flex: 1, textAlign: 'center' },
   tickCol: { width: 48 },
   effort: { paddingLeft: 32 },
+  effortSide: { paddingLeft: 40 },
   legend: { fontFamily: fonts.body, fontSize: 12, lineHeight: 17, color: colors.ink3 },
   addSet: {
     alignSelf: 'flex-start',

@@ -52,6 +52,11 @@ export function saveSession(credentials: Credentials, payload: SessionPayload) {
   return apiCall<Session>('POST', 'sessions.save', payload as unknown as Record<string, unknown>, { credentials });
 }
 
+/** Cancel workout. Deleting a session that isn't there succeeds; an older delete gets 409 and the stored session. */
+export function deleteSession(credentials: Credentials, payload: { session_date: string; client_updated_at: string }) {
+  return apiCall<{ deleted: boolean }>('POST', 'sessions.delete', payload, { credentials });
+}
+
 export function sessionHistory(credentials: Credentials, exercise: string, limit = 6) {
   return apiCall<HistoryItem[]>('GET', 'sessions.history', { exercise, limit }, { credentials });
 }

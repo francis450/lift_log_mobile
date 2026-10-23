@@ -1,4 +1,4 @@
-import type { ExerciseInfo, Program } from '@/api/types';
+import type { ExerciseInfo, Program, Routine } from '@/api/types';
 import program from '@/lib/__tests__/fixtures/program-block2.json';
 import { sessionsByDate } from '@/workout/week';
 import { callSentence } from '@/lib/nextCall';
@@ -13,7 +13,10 @@ import {
   hasLogged,
   historyFor,
   needsStart,
+  newSetRows,
   nextItemFor,
+  placeholdersFor,
+  setNumbers,
   startDraft,
   summarise,
   targetLine,
@@ -234,5 +237,93 @@ describe('starting a workout', () => {
     // Started but nothing logged yet: Resume.
     const started = startDraft(fresh(), new Date('2026-10-13T15:05:00Z'));
     expect(sessionsByDate(server, [started]).get('2026-10-13')?.status).toBe('in_progress');
+  });
+});
+
+describe('per-side exercises', () => {
+  const routine: Routine = {
+    key: 'conditioning',
+    name: 'Conditioning + Core',
+    items: [
+      { exercise: 'Plank', sets: 3, reps: '45-60' },
+      { exercise: 'Side plank', sets: 3, reps: '30', note: 'per side' },
+    ],
+  };
+  const draft = () => createDraft({ date: '2026-10-21', week: 3, routine, suggestions: {}, now: new Date('2026-10-21T15:00:00Z') });
+
+  it('give each set an L and an R row', () => {
+    const rows = draft().rows['Side plank'];
+    expect(rows.map((r) => r.side)).toEqual(['L', 'R', 'L', 'R', 'L', 'R']);
+    expect(setNumbers(rows)).toEqual([1, 1, 2, 2, 3, 3]);
+    expect(draft().rows.Plank.every((r) => r.side === undefined)).toBe(true);
+  });
+
+  it('save each side with its own reps and effort, sharing the set number', () => {
+    const d = draft();
+    d.rows['Side plank'][0] = { kg: '', reps: '38', done: true, effort: 'right', side: 'L' };
+    d.rows['Side plank'][1] = { kg: '', reps: '35', done: true, effort: 'hard', side: 'R' };
+    d.rows['Side plank'][3] = { kg: '', reps: '36', done: true, effort: null, side: 'R' };
+    expect(toPayload(d).sets).toEqual([
+      { exercise: 'Side plank', set_no: 1, side: 'L', kg: null, amount: 38, effort: 'right', done: true },
+      { exercise: 'Side plank', set_no: 1, side: 'R', kg: null, amount: 35, effort: 'hard', done: true },
+      { exercise: 'Side plank', set_no: 2, side: 'R', kg: null, amount: 36, effort: null, done: true },
+    ]);
+  });
+
+  it('round-trip into their L/R slots', () => {
+    const d = draft();
+    d.rows['Side plank'][3] = { kg: '', reps: '36', done: true, effort: 'hard', side: 'R' };
+    const back = fromSession(toSession(d), routine);
+    expect(back.rows['Side plank']).toEqual(d.rows['Side plank']);
+  });
+
+  it('keep older plain entries plain', () => {
+    const session = toSession(draft());
+    session.sets = [
+      { exercise: 'Side plank', set_no: 1, kg: null, amount: 37, effort: 'hard', done: true },
+      { exercise: 'Side plank', set_no: 2, kg: null, amount: 36, effort: 'hard', done: true },
+    ];
+    const rows = fromSession(session, routine).rows['Side plank'];
+    expect(rows.map((r) => [r.reps, r.side])).toEqual([['37', undefined], ['36', undefined], ['', undefined]]);
+    expect(newSetRows(rows, true)).toHaveLength(1);
+  });
+
+  it('add a set as an L and R pair', () => {
+    const added = newSetRows(draft().rows['Side plank'], true);
+    expect(added.map((r) => r.side)).toEqual(['L', 'R']);
+  });
+
+  it("use last time's amount for the same set and side as the placeholder", () => {
+    const last = [
+      { set_no: 1, side: 'L' as const, amount: 38 },
+      { set_no: 1, side: 'R' as const, amount: 35 },
+      { set_no: 2, side: 'L' as const, amount: 37 },
+    ];
+    expect(placeholdersFor(draft().rows['Side plank'], last, '30')).toEqual(['38', '35', '37', '37', '37', '37']);
+    // Older plain entries: each side gets that set's number.
+    const plain = [{ set_no: 1, amount: 37 }, { set_no: 2, amount: 36 }];
+    expect(placeholdersFor(draft().rows['Side plank'], plain, '30')).toEqual(['37', '37', '36', '36', '36', '36']);
+    expect(placeholdersFor(draft().rows.Plank, [], '45')).toEqual(['45', '45', '45']);
+  });
+
+  it('judge the add-weight call on the weaker side', () => {
+    const d = draft();
+    d.rows['Side plank'][0] = { kg: '', reps: '38', done: true, effort: 'hard', side: 'L' };
+    d.rows['Side plank'][1] = { kg: '', reps: '35', done: true, effort: 'hard', side: 'R' };
+    const history = historyFor('Side plank', '2026-10-28', [toSession(d)], []);
+    const item = routine.items![1];
+    expect(callFor({ program: block, item, info: { type: 'time', increment_kg: 0, form_url: null }, history }).reason).toBe(
+      'Beat last time: 35',
+    );
+  });
+});
+
+describe('dumbbell pairs', () => {
+  it('count both dumbbells in total lifted', () => {
+    const session = toSession(logged6Oct());
+    session.sets = [{ exercise: 'Hammer curls', set_no: 1, kg: 7.5, amount: 10, effort: null, done: true }];
+    const pairLibrary = { 'Hammer curls': { type: 'load' as const, increment_kg: 2.5, pair: true, form_url: null } };
+    expect(summarise(session, pairLibrary).totalKg).toBe(150);
+    expect(summarise(session, { 'Hammer curls': { ...pairLibrary['Hammer curls'], pair: false } }).totalKg).toBe(75);
   });
 });

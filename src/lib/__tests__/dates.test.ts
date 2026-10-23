@@ -1,4 +1,4 @@
-import { addDays, formatDayShort, formatTime12, minutesNowIn, todayIn, weekdayLabel } from '../dates';
+import { addDays, formatDayShort, formatTime12, hhmmIn, isoAt, minutesNowIn, todayIn, weekdayLabel } from '../dates';
 
 describe('dates', () => {
   it("uses the user's time zone for today", () => {
@@ -15,5 +15,20 @@ describe('dates', () => {
     expect(formatTime12('18:00')).toBe('6:00 PM');
     expect(formatTime12('00:30')).toBe('12:30 AM');
     expect(formatTime12('12:05')).toBe('12:05 PM');
+  });
+});
+
+describe('local times for the time pickers', () => {
+  it('reads a UTC time as local HH:MM', () => {
+    expect(hhmmIn('2026-10-22T15:45:03.737Z', 'Africa/Nairobi')).toBe('18:45');
+    expect(hhmmIn('2026-10-22T22:10:00Z', 'Africa/Nairobi')).toBe('01:10');
+  });
+
+  it('turns a local day and HH:MM into UTC', () => {
+    expect(isoAt('2026-10-22', '18:45', 'Africa/Nairobi')).toBe('2026-10-22T15:45:00.000Z');
+    expect(isoAt('2026-10-22', '01:10', 'Africa/Nairobi')).toBe('2026-10-21T22:10:00.000Z');
+    // Across a DST change: London is UTC+1 in summer, UTC+0 after 25 Oct 2026.
+    expect(isoAt('2026-10-26', '09:00', 'Europe/London')).toBe('2026-10-26T09:00:00.000Z');
+    expect(isoAt('2026-10-24', '09:00', 'Europe/London')).toBe('2026-10-24T08:00:00.000Z');
   });
 });

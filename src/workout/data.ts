@@ -4,13 +4,13 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 
 import { NetworkError } from '@/api/client';
 import * as api from '@/api/endpoints';
-import type { FoodMonthDay, HistoryItem, MonthSession, Session } from '@/api/types';
-import { cacheGet, cacheSet, workoutAll, workoutGet, workoutPut } from '@/db/database';
+import type { FoodMonthDay, HistoryItem, MonthSession, Routine, Session, SessionDelete } from '@/api/types';
+import { cacheGet, cacheSet, workoutAll, workoutDelete, workoutGet, workoutPut } from '@/db/database';
 import { useAuth } from '@/state/auth';
 import { queryClient } from '@/state/queryClient';
 import { enqueueAndSync } from '@/sync';
 
-import { toPayload, toSession, WorkoutDraft } from './model';
+import { fromSession, toPayload, toSession, WorkoutDraft } from './model';
 
 /** Save a draft on the phone; with `sync`, also queue it for the server. */
 export async function saveDraft(draft: WorkoutDraft, sync: boolean): Promise<void> {
@@ -19,6 +19,33 @@ export async function saveDraft(draft: WorkoutDraft, sync: boolean): Promise<voi
   await queryClient.invalidateQueries({ queryKey: ['local-workouts'] });
   void queryClient.invalidateQueries({ queryKey: ['session', draft.date] });
   if (sync) void queryClient.invalidateQueries({ queryKey: ['today'] });
+}
+
+/** Cancel workout: remove the day's session from the phone, and from the server when it syncs. */
+export async function cancelWorkout(date: string): Promise<void> {
+  await workoutDelete(date);
+  const payload: SessionDelete = { session_date: date, delete: true, client_updated_at: new Date().toISOString() };
+  await enqueueAndSync('session', date, payload);
+  await queryClient.invalidateQueries({ queryKey: ['local-workouts'] });
+  queryClient.setQueryData(['session', date], null);
+  void queryClient.invalidateQueries({ queryKey: ['today'] });
+  void queryClient.invalidateQueries({ queryKey: ['sessions-month'] });
+}
+
+/** Edit times on a saved session (UTC ISO). Uses the phone's copy, else the server's. */
+export async function saveSessionTimes(
+  date: string,
+  times: { started_at: string; finished_at: string | null },
+  routine: Routine | null,
+): Promise<void> {
+  const credentials = useAuth.getState().credentials;
+  let draft = await loadDraft(date);
+  if (!draft && credentials) {
+    const stored = await api.getSession(credentials, date);
+    if (stored) draft = fromSession(stored, routine);
+  }
+  if (!draft) throw new Error('This session is not on the phone or the server.');
+  await saveDraft({ ...draft, ...times, client_updated_at: new Date().toISOString() }, true);
 }
 
 export function loadDraft(date: string): Promise<WorkoutDraft | null> {

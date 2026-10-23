@@ -10,7 +10,7 @@ import {
   RuleTarget,
 } from '../nextCall';
 
-type RawSet = [number | null, number, string | null];
+type RawSet = [number | null, number, string | null] | [number | null, number, string | null, 'L' | 'R', number];
 interface RawCase {
   name: string;
   exercise: string;
@@ -26,7 +26,7 @@ function history(raw: RawCase['history']): RuleSession[] {
   return raw.map((s) => ({
     date: s.date,
     deload: s.deload,
-    sets: s.sets.map(([kg, amount, effort]) => ({ kg, amount, effort: effort as Effort | null })),
+    sets: s.sets.map(([kg, amount, effort, side, set_no]) => ({ kg, amount, effort: effort as Effort | null, side, set_no })),
   }));
 }
 

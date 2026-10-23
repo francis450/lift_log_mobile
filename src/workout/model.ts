@@ -1,7 +1,17 @@
 // Pure workout model: drafts saved on the phone, conversion to the API shape, history for the
 // add-weight rule, the summary numbers and day statuses. No React, no storage.
 
-import type { ExerciseInfo, HistoryItem, Program, Routine, RoutineItem, Session, SessionPayload, SetEntry } from '@/api/types';
+import type {
+  ExerciseInfo,
+  HistoryItem,
+  Program,
+  Routine,
+  RoutineItem,
+  Session,
+  SessionPayload,
+  SetEntry,
+  Side,
+} from '@/api/types';
 import { formatNumber, parseNumber } from '@/lib/numbers';
 import { Effort, nextCall, NextCall, parseRepRange, RuleSession } from '@/lib/nextCall';
 import { addDays } from '@/lib/dates';
@@ -12,6 +22,33 @@ export interface DraftRow {
   reps: string;
   done: boolean;
   effort: Effort | null;
+  /** Per-side exercises: each set is an L row then an R row. */
+  side?: Side;
+}
+
+/** Logged left and right separately (the program marks these "per side"). */
+export function isPerSide(item: RoutineItem | undefined): boolean {
+  return item?.note === 'per side';
+}
+
+function emptyRows(perSide: boolean, sets: number, kg = ''): DraftRow[] {
+  const blank = (side?: Side): DraftRow => ({ kg, reps: '', done: false, effort: null, ...(side ? { side } : {}) });
+  return Array.from({ length: sets }, () => (perSide ? [blank('L'), blank('R')] : [blank()])).flat();
+}
+
+/** The rows "+ Add set" appends: an L and R pair for per-side exercises, else one row. */
+export function newSetRows(rows: DraftRow[], perSide: boolean): DraftRow[] {
+  const kg = rows[rows.length - 1]?.kg ?? '';
+  // Older sessions logged per-side exercises as plain rows; keep adding plain rows to those.
+  const pairs = perSide && (rows.length === 0 || rows.some((r) => r.side));
+  return emptyRows(pairs, 1, kg);
+}
+
+/** Set numbers for the rows: per-side rows share theirs with their pair. */
+export function setNumbers(rows: DraftRow[]): number[] {
+  let plain = 0;
+  let sided = 0;
+  return rows.map((r) => (r.side ? Math.floor(sided++ / 2) + 1 : ++plain));
 }
 
 export interface WorkoutDraft {
@@ -75,12 +112,7 @@ export function createDraft(params: {
   const rows: Record<string, DraftRow[]> = {};
   for (const item of items) {
     const kg = suggestions[item.exercise]?.kg;
-    rows[item.exercise] = Array.from({ length: item.sets }, () => ({
-      kg: kg !== undefined ? formatNumber(kg) : '',
-      reps: '',
-      done: false,
-      effort: null,
-    }));
+    rows[item.exercise] = emptyRows(isPerSide(item), item.sets, kg !== undefined ? formatNumber(kg) : '');
   }
   const iso = now.toISOString();
   return {
@@ -124,13 +156,23 @@ export function startDraft(draft: WorkoutDraft, now: Date): WorkoutDraft {
 export function toPayload(draft: WorkoutDraft): SessionPayload {
   const sets: SetEntry[] = [];
   for (const exercise of draft.exercises) {
+    // Plain rows are numbered by what was logged; per-side rows keep their pair's number.
     let setNo = 0;
-    for (const row of draft.rows[exercise] ?? []) {
+    const rows = draft.rows[exercise] ?? [];
+    const pairNo = setNumbers(rows);
+    rows.forEach((row, i) => {
       const amount = parseNumber(row.reps);
-      if (amount === null) continue;
-      setNo += 1;
-      sets.push({ exercise, set_no: setNo, kg: parseNumber(row.kg), amount, effort: row.effort, done: row.done });
-    }
+      if (amount === null) return;
+      const entry: SetEntry = {
+        exercise,
+        set_no: row.side ? pairNo[i] : ++setNo,
+        kg: parseNumber(row.kg),
+        amount,
+        effort: row.effort,
+        done: row.done,
+      };
+      sets.push(row.side ? { ...entry, side: row.side } : entry);
+    });
   }
   return {
     session_date: draft.date,
@@ -157,10 +199,15 @@ export function fromSession(session: Session, routine: Routine | null): WorkoutD
   for (const s of session.sets) if (!order.includes(s.exercise)) order.push(s.exercise);
   const rows: Record<string, DraftRow[]> = {};
   for (const exercise of order) {
-    rows[exercise] = session.sets
-      .filter((s) => s.exercise === exercise)
-      .map((s) => ({ kg: formatNumber(s.kg), reps: formatNumber(s.amount), done: s.done, effort: s.effort }));
-    const planned = routine?.items?.find((i) => i.exercise === exercise)?.sets ?? 0;
+    const item = routine?.items?.find((i) => i.exercise === exercise);
+    const logged = session.sets.filter((s) => s.exercise === exercise);
+    // Per-side sets go back to their L/R slots; older plain rows of a per-side exercise stay plain.
+    if (isPerSide(item) && (logged.length === 0 || logged.some((s) => s.side))) {
+      rows[exercise] = sideRows(logged, item?.sets ?? 0);
+      continue;
+    }
+    rows[exercise] = logged.map(toDraftRow);
+    const planned = item?.sets ?? 0;
     while (rows[exercise].length < planned) rows[exercise].push({ kg: '', reps: '', done: false, effort: null });
   }
   return {
@@ -180,6 +227,42 @@ export function fromSession(session: Session, routine: Routine | null): WorkoutD
   };
 }
 
+function toDraftRow(s: SetEntry): DraftRow {
+  const row: DraftRow = { kg: formatNumber(s.kg), reps: formatNumber(s.amount), done: s.done, effort: s.effort };
+  return s.side ? { ...row, side: s.side } : row;
+}
+
+/** Stored per-side sets placed in their L/R slots, padded to the planned sets. */
+function sideRows(logged: SetEntry[], plannedSets: number): DraftRow[] {
+  const sets = Math.max(plannedSets, ...logged.map((s) => s.set_no));
+  const rows = emptyRows(true, sets);
+  for (const s of logged) {
+    const slot = (s.set_no - 1) * 2 + (s.side === 'R' ? 1 : 0);
+    if (s.side && slot >= 0 && slot < rows.length) rows[slot] = toDraftRow(s);
+  }
+  return rows;
+}
+
+/**
+ * Placeholder amounts for a card's rows: last session's amount for the same set (and side),
+ * else its last amount, else the fallback (the bottom of the target range).
+ */
+export function placeholdersFor(
+  rows: DraftRow[],
+  last: { amount: number; side?: Side | null; set_no?: number }[],
+  fallback: string,
+): string[] {
+  const numbers = setNumbers(rows);
+  const plainLast = last.filter((s) => !s.side);
+  return rows.map((row, i) => {
+    const same = row.side
+      ? (last.find((s) => s.side === row.side && s.set_no === numbers[i]) ?? plainLast[numbers[i] - 1])
+      : plainLast[i];
+    const any = same ?? last[last.length - 1];
+    return any ? formatNumber(any.amount) : fallback;
+  });
+}
+
 /** Rule history for one exercise: local sessions win over server copies of the same date. */
 export function historyFor(
   exercise: string,
@@ -188,19 +271,19 @@ export function historyFor(
   server: HistoryItem[],
 ): RuleSession[] {
   const byDate = new Map<string, { routine_key: string | null; sets: RuleSession['sets'] }>();
+  const ruleSet = (s: HistoryItem['sets'][number]): RuleSession['sets'][number] => ({
+    kg: s.kg,
+    amount: s.amount,
+    effort: s.effort,
+    ...(s.side ? { side: s.side, set_no: s.set_no } : {}),
+  });
   for (const item of server) {
-    byDate.set(item.date, {
-      routine_key: item.routine_key,
-      sets: item.sets.map((s) => ({ kg: s.kg, amount: s.amount, effort: s.effort })),
-    });
+    byDate.set(item.date, { routine_key: item.routine_key, sets: item.sets.map(ruleSet) });
   }
   for (const session of local) {
     const sets = session.sets.filter((s) => s.exercise === exercise);
     if (!sets.length) continue;
-    byDate.set(session.session_date, {
-      routine_key: session.routine_key,
-      sets: sets.map((s) => ({ kg: s.kg, amount: s.amount, effort: s.effort })),
-    });
+    byDate.set(session.session_date, { routine_key: session.routine_key, sets: sets.map(ruleSet) });
   }
   return [...byDate.entries()]
     .filter(([date]) => date < beforeDate)
@@ -243,14 +326,18 @@ export interface SessionSummary {
   effort: { easy: number; right: number; hard: number; unrated: number };
 }
 
-/** Duration, sets, total kg (kg x reps over load exercises) and the effort split. */
+/**
+ * Duration, sets, total kg (kg x reps over load exercises, twice for a pair of dumbbells) and the
+ * effort split. A per-side set counts as two entries: each side has its own reps and effort.
+ */
 export function summarise(session: Session, library: Record<string, ExerciseInfo> | undefined): SessionSummary {
   const effort = { easy: 0, right: 0, hard: 0, unrated: 0 };
   let totalKg = 0;
   for (const s of session.sets) {
     if (s.effort) effort[s.effort] += 1;
     else effort.unrated += 1;
-    if (exerciseInfo(library, s.exercise).type === 'load' && s.kg) totalKg += s.kg * s.amount;
+    const info = exerciseInfo(library, s.exercise);
+    if (info.type === 'load' && s.kg) totalKg += s.kg * s.amount * (info.pair ? 2 : 1);
   }
   const start = session.started_at ? Date.parse(session.started_at) : NaN;
   const end = session.finished_at ? Date.parse(session.finished_at) : NaN;

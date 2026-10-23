@@ -5,6 +5,10 @@ import { colors, fonts, radii } from '@/theme';
 
 interface Props {
   setNo: number;
+  /** Per-side exercises: the row's side, shown after the set number ("1L", "1R"). */
+  side?: 'L' | 'R';
+  /** "kg" or "kg per dumbbell", for the weight field's label. */
+  kgLabel?: string;
   kg: string;
   reps: string;
   /** Last session's reps, shown as placeholder text. */
@@ -22,6 +26,8 @@ interface Props {
 /** Set number, kg field, reps field (48 tall, mono 18) and a 48 x 48 tick. */
 export function SetRow({
   setNo,
+  side,
+  kgLabel = 'kg',
   kg,
   reps,
   repsPlaceholder,
@@ -34,12 +40,16 @@ export function SetRow({
   onToggleDone,
 }: Props) {
   const fieldStyle = [styles.field, done && styles.fieldDone, active && !done && styles.fieldActive];
+  const name = side ? `Set ${setNo} ${side === 'L' ? 'left' : 'right'}` : `Set ${setNo}`;
   return (
     <View style={styles.row}>
-      <Text style={styles.setNo}>{setNo}</Text>
+      <Text style={[styles.setNo, side && styles.setNoSide]}>
+        {setNo}
+        {side ?? ''}
+      </Text>
       {showKg ? (
         <TextInput
-          accessibilityLabel={`Set ${setNo} weight in kg`}
+          accessibilityLabel={`${name} weight in ${kgLabel}`}
           value={kg}
           onChangeText={onChangeKg}
           keyboardType="decimal-pad"
@@ -47,7 +57,7 @@ export function SetRow({
         />
       ) : null}
       <TextInput
-        accessibilityLabel={`Set ${setNo} ${repsLabel}`}
+        accessibilityLabel={`${name} ${repsLabel}`}
         value={reps}
         onChangeText={onChangeReps}
         placeholder={repsPlaceholder}
@@ -57,7 +67,7 @@ export function SetRow({
       />
       <Pressable
         accessibilityRole="checkbox"
-        accessibilityLabel={`Set ${setNo} done`}
+        accessibilityLabel={`${name} done`}
         accessibilityState={{ checked: done }}
         onPress={onToggleDone}
         style={[styles.tick, done && styles.tickDone]}
@@ -71,6 +81,7 @@ export function SetRow({
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   setNo: { width: 24, fontFamily: fonts.mono, fontSize: 15, color: colors.ink3, textAlign: 'center' },
+  setNoSide: { width: 32 },
   field: {
     flex: 1,
     height: 48,

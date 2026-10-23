@@ -187,7 +187,11 @@ export interface SuggestResponse {
 
 export interface ExerciseInfo {
   type: 'load' | 'bodyweight' | 'time' | 'distance';
+  equipment?: 'barbell' | 'dumbbell' | 'cable' | 'machine' | 'bodyweight' | null;
+  /** The equipment's weight step: suggested weights are always a multiple of it. */
   increment_kg: number;
+  /** Two dumbbells at once: kg is logged per dumbbell and counted twice in total lifted. */
+  pair?: boolean;
   form_url: string | null;
 }
 
@@ -255,7 +259,14 @@ export interface HistoryItem {
   routine_name: string | null;
   status: 'in_progress' | 'done';
   exercise: string;
-  sets: { set_no: number; kg: number | null; amount: number; effort: 'easy' | 'right' | 'hard' | null; done: boolean }[];
+  sets: {
+    set_no: number;
+    side?: Side | null;
+    kg: number | null;
+    amount: number;
+    effort: 'easy' | 'right' | 'hard' | null;
+    done: boolean;
+  }[];
 }
 
 export interface SessionPayload {
@@ -269,6 +280,13 @@ export interface SessionPayload {
   note: string;
   client_updated_at: string;
   sets: SetEntry[];
+}
+
+/** Cancel workout, as queued for the server: it takes the day's session slot in the outbox, so a pending save is dropped. */
+export interface SessionDelete {
+  session_date: string;
+  delete: true;
+  client_updated_at: string;
 }
 
 export type ProfileUpdate = Partial<{
@@ -297,9 +315,13 @@ export interface SignInResponse {
   has_profile: boolean;
 }
 
+/** Per-side exercises log each set as an L and an R entry sharing a set_no. */
+export type Side = 'L' | 'R';
+
 export interface SetEntry {
   exercise: string;
   set_no: number;
+  side?: Side | null;
   kg: number | null;
   amount: number;
   effort: 'easy' | 'right' | 'hard' | null;
