@@ -101,24 +101,26 @@ function Summary({ session }: { session: Session }) {
         <Card style={styles.gap10}>
           <View style={styles.rowBetween}>
             <Text style={styles.cardTitle}>How hard it felt</Text>
-            <Text style={type.secondary}>{summary.setsLogged} sets</Text>
+            <Text style={type.secondary}>
+              {summary.setsLogged} sets{summary.warmups ? `, ${summary.warmups} warm-up` : ''}
+            </Text>
           </View>
           {rated ? (
             <>
-              <View style={styles.bar} accessible accessibilityLabel={`${summary.effort.easy} easy, ${summary.effort.right} right, ${summary.effort.hard} hard`}>
+              <View style={styles.bar} accessible accessibilityLabel={`${summary.effort.easy} with 3 or more reps left, ${summary.effort.right} with 1 to 2 left, ${summary.effort.hard} to failure`}>
                 {summary.effort.easy ? <View style={{ flex: summary.effort.easy, backgroundColor: colors.up }} /> : null}
                 {summary.effort.right ? <View style={{ flex: summary.effort.right, backgroundColor: colors.accent }} /> : null}
                 {summary.effort.hard ? <View style={{ flex: summary.effort.hard, backgroundColor: colors.hold }} /> : null}
               </View>
               <View style={styles.counts}>
                 <Text style={type.secondary}>
-                  <Text style={[styles.count, { color: colors.up }]}>{summary.effort.easy}</Text> easy
+                  <Text style={[styles.count, { color: colors.up }]}>{summary.effort.easy}</Text> 3+ left
                 </Text>
                 <Text style={type.secondary}>
-                  <Text style={[styles.count, { color: colors.accent }]}>{summary.effort.right}</Text> right
+                  <Text style={[styles.count, { color: colors.accent }]}>{summary.effort.right}</Text> 1–2 left
                 </Text>
                 <Text style={type.secondary}>
-                  <Text style={[styles.count, { color: colors.hold }]}>{summary.effort.hard}</Text> hard
+                  <Text style={[styles.count, { color: colors.hold }]}>{summary.effort.hard}</Text> to failure
                 </Text>
               </View>
             </>

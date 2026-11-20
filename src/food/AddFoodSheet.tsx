@@ -14,7 +14,7 @@ import { formatKcal } from '@/lib/targets';
 import { colors, fonts, radii, type } from '@/theme';
 
 import { AiNotReady, DescribeTab, PhotoTab } from './AiTabs';
-import { MEALS, mealLabel, searchFoods } from './model';
+import { MEALS, mealLabel, qtyFromGrams, searchFoods } from './model';
 
 type Tab = 'photo' | 'describe' | 'search' | 'custom';
 
@@ -22,8 +22,19 @@ export interface AddRequest {
   meal: Meal;
   item: Omit<FoodItem, 'name'>;
   qty: number;
+  /** Kitchen-scale weight, when the food was weighed. */
+  grams?: number | null;
   source: FoodSource;
   saveToMyFoods: boolean;
+}
+
+/** Grams from the scale for a food whose portion weight is known: qty follows the grams. */
+function useWeighed(gramsPerPortion: number | null | undefined) {
+  const [grams, setGrams] = useState('');
+  const g = parseNumber(grams);
+  const error = gramsPerPortion ? checkRange(g, { min: 1, max: 5000, label: 'weight', unit: 'g' }) : null;
+  const qty = gramsPerPortion && g && !error ? qtyFromGrams(g, gramsPerPortion) : null;
+  return { grams, setGrams, g: qty ? g : null, qty, error };
 }
 
 interface Props {
@@ -86,6 +97,8 @@ function SearchTab({ meal, foods, onAdd }: { meal: Meal; foods: Props['foods']; 
   const [query, setQuery] = useState('');
   const [picked, setPicked] = useState<FoodItem | null>(null);
   const [qty, setQty] = useState(1);
+  const weighed = useWeighed(picked?.grams_per_portion);
+  const amount = weighed.qty ?? qty;
   const groups = searchFoods(foods, query);
   const keyOf = (i: FoodItem) => `${i.food_name}|${i.portion}`;
 
@@ -122,6 +135,7 @@ function SearchTab({ meal, foods, onAdd }: { meal: Meal; foods: Props['foods']; 
                   onPress={() => {
                     setPicked(item);
                     setQty(1);
+                    weighed.setGrams('');
                   }}
                   style={[styles.result, on && styles.resultOn]}
                 >
@@ -145,16 +159,32 @@ function SearchTab({ meal, foods, onAdd }: { meal: Meal; foods: Props['foods']; 
               {picked.food_name}
             </Text>
             <Text style={styles.pickTotal}>
-              {formatKcal(picked.kcal * qty)} kcal · {Math.round(picked.protein_g * qty)} g protein
+              {formatKcal(picked.kcal * amount)} kcal · {Math.round(picked.protein_g * amount)} g protein
             </Text>
           </View>
-          <QtyStepper value={qty} onChange={setQty} />
+          {picked.grams_per_portion ? (
+            <View style={styles.grams}>
+              <TextField
+                label="Weighed (g)"
+                variant="numeric"
+                value={weighed.grams}
+                onChangeText={weighed.setGrams}
+                placeholder={`${picked.grams_per_portion} g = 1`}
+                keyboardType="decimal-pad"
+                error={weighed.grams ? weighed.error : null}
+              />
+            </View>
+          ) : (
+            <QtyStepper value={qty} onChange={setQty} />
+          )}
         </View>
       ) : null}
       <Button
         label={`Add to ${mealLabel(meal)}`}
         disabled={!picked}
-        onPress={() => picked && onAdd({ meal, item: picked, qty, source: 'search', saveToMyFoods: false })}
+        onPress={() =>
+          picked && onAdd({ meal, item: picked, qty: amount, grams: weighed.g, source: 'search', saveToMyFoods: false })
+        }
       />
     </View>
   );
@@ -165,25 +195,32 @@ function CustomTab({ meal, onAdd }: { meal: Meal; onAdd: Props['onAdd'] }) {
   const [portion, setPortion] = useState('');
   const [kcal, setKcal] = useState('');
   const [protein, setProtein] = useState('');
+  const [portionGrams, setPortionGrams] = useState('');
   const [qty, setQty] = useState(1);
   const [save, setSave] = useState(true);
   const [touched, setTouched] = useState(false);
 
   const k = parseNumber(kcal);
   const p = parseNumber(protein);
+  const gpp = parseNumber(portionGrams);
+  const gppError = checkRange(gpp, { min: 1, max: 5000, label: 'portion weight', unit: 'g' });
+  const weighed = useWeighed(gppError ? null : gpp);
   const errors = {
     name: name.trim() ? null : 'Enter a name.',
     kcal: checkRange(k, { min: 0, max: 5000, label: 'kcal value', required: true }),
     protein: checkRange(p, { min: 0, max: 300, label: 'protein value', unit: 'g', required: true }),
+    portionGrams: gppError,
+    grams: weighed.grams ? weighed.error : null,
   };
 
   function submit() {
     setTouched(true);
-    if (errors.name || errors.kcal || errors.protein) return;
+    if (errors.name || errors.kcal || errors.protein || errors.portionGrams || errors.grams) return;
     onAdd({
       meal,
-      item: { food_name: name.trim(), portion: portion.trim(), kcal: k!, protein_g: p! },
-      qty,
+      item: { food_name: name.trim(), portion: portion.trim(), kcal: k!, protein_g: p!, grams_per_portion: gpp },
+      qty: weighed.qty ?? qty,
+      grams: weighed.g,
       source: 'custom',
       saveToMyFoods: save,
     });
@@ -211,10 +248,34 @@ function CustomTab({ meal, onAdd }: { meal: Meal; onAdd: Props['onAdd'] }) {
           error={touched ? errors.protein : null}
         />
       </View>
-      <View style={styles.rowBetween}>
-        <Text style={type.bodyMedium}>Portions</Text>
-        <QtyStepper value={qty} onChange={setQty} />
+      <View style={styles.pair}>
+        <TextField
+          label="Grams per portion"
+          variant="numeric"
+          value={portionGrams}
+          onChangeText={setPortionGrams}
+          placeholder="optional, e.g. 100"
+          keyboardType="decimal-pad"
+          error={touched ? errors.portionGrams : null}
+        />
+        {gpp && !gppError ? (
+          <TextField
+            label="Weighed (g)"
+            variant="numeric"
+            value={weighed.grams}
+            onChangeText={weighed.setGrams}
+            placeholder="from the scale"
+            keyboardType="decimal-pad"
+            error={touched ? errors.grams : null}
+          />
+        ) : null}
       </View>
+      {weighed.qty === null ? (
+        <View style={styles.rowBetween}>
+          <Text style={type.bodyMedium}>Portions</Text>
+          <QtyStepper value={qty} onChange={setQty} />
+        </View>
+      ) : null}
       <View style={styles.rowBetween}>
         <Text style={type.bodyMedium}>Save to my foods</Text>
         <Toggle accessibilityLabel="Save to my foods" value={save} onChange={setSave} />
@@ -280,6 +341,7 @@ const styles = StyleSheet.create({
   pickName: { fontFamily: fonts.bodySemi, fontSize: 15, color: colors.ink },
   pickTotal: { fontFamily: fonts.mono, fontSize: 13, color: colors.ink2 },
   custom: { gap: 12, paddingBottom: 12 },
+  grams: { width: 120 },
   pair: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44 },
 });

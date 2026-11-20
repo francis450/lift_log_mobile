@@ -7,6 +7,7 @@ import { ApiError } from '@/api/client';
 import * as api from '@/api/endpoints';
 import type {
   CheckinPayload,
+  DailyLogPayload,
   FoodDay,
   FoodItem,
   Profile,
@@ -55,6 +56,12 @@ async function send(item: OutboxItem): Promise<void> {
       void queryClient.invalidateQueries({ queryKey: ['profile'] });
       void queryClient.invalidateQueries({ queryKey: ['progress'] });
       return;
+    case 'daily_log': {
+      const sent = item.payload as DailyLogPayload;
+      await api.saveDaily(credentials, sent);
+      void queryClient.invalidateQueries({ queryKey: ['today', sent.log_date] });
+      return;
+    }
     default:
       throw new Error(`No sender for ${item.kind} yet`);
   }

@@ -10,6 +10,7 @@ import { Card } from '@/components/Card';
 import { Meter } from '@/components/Meter';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { WeekStrip } from '@/components/WeekStrip';
+import { DailyLogCard, dailyLogKey } from '@/daily/DailyLogCard';
 import { useProfile, useSaveProfile, useTimeZone, useToday } from '@/hooks/queries';
 import { useFoodDay } from '@/food/data';
 import { totals } from '@/food/model';
@@ -94,6 +95,7 @@ export default function TodayScreen() {
         {data ? (
           <>
             <TargetsNote note={data.targets_note} />
+            <DailyLogCard key={dailyLogKey(data)} data={data} />
             <SessionCardView data={data} sessionTime={profile.data?.session_time ?? null} from={from} />
             <FoodCard data={data} minutesNow={minutesNowIn(tz)} />
             <LastSessionCard data={data} sessions={local.data?.sessions ?? []} />

@@ -100,3 +100,26 @@ describe('search', () => {
     expect(mergeRecent([chapati], [chapati, chai]).map((i) => i.food_name)).toEqual(['Chapati', 'Chai with milk and sugar']);
   });
 });
+
+describe('weighed food', () => {
+  it('turns scale grams into portions and back', () => {
+    const { qtyFromGrams, entryGramsPerPortion, entryAmount, makeEntry, withQty, withComplete } = jest.requireActual('../model');
+    expect(qtyFromGrams(235, 100)).toBe(2.35);
+    expect(qtyFromGrams(150, 150)).toBe(1);
+    const entry = makeEntry({
+      meal: 'lunch',
+      item: { food_name: 'Ugali', portion: '100 g', kcal: 120, protein_g: 2.5 },
+      qty: 2.35,
+      grams: 235,
+      source: 'search',
+      now: new Date('2026-11-24T09:00:00Z'),
+    });
+    expect(entry.grams).toBe(235);
+    expect(entryGramsPerPortion(entry)).toBe(100);
+    expect(entryAmount(entry)).toBe('235 g');
+    expect(entryAmount({ qty: 2, grams: null })).toBe('× 2');
+    const day = { food_date: '2026-11-24', client_updated_at: null, entries: [entry] };
+    expect(withQty(day, entry.client_id, 1.8, 180).entries[0]).toMatchObject({ qty: 1.8, grams: 180 });
+    expect(withComplete(day, true).complete).toBe(true);
+  });
+});
