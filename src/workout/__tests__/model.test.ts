@@ -12,6 +12,7 @@ import {
   fromSession,
   hasLogged,
   historyFor,
+  kgLabels,
   needsStart,
   newSetRows,
   nextItemFor,
@@ -68,7 +69,7 @@ describe('workout drafts', () => {
     });
     expect(draft.exercises).toEqual(['Barbell back squat', 'Barbell Romanian deadlift', 'Hip thrust', 'Standing calf raise']);
     expect(draft.rows['Barbell back squat']).toHaveLength(3);
-    expect(draft.rows['Barbell back squat'][0]).toEqual({ kg: '40', reps: '', done: false, effort: null });
+    expect(draft.rows['Barbell back squat'][0]).toEqual({ kg: '40', reps: '', done: false, effort: null, rir: null });
     expect(draft.rows['Hip thrust'][0].kg).toBe('');
   });
 
@@ -79,8 +80,8 @@ describe('workout drafts', () => {
     draft.rows['Barbell back squat'][2] = { kg: '', reps: '6', done: true, effort: null };
     const payload = toPayload(draft);
     expect(payload.sets).toEqual([
-      { exercise: 'Barbell back squat', set_no: 1, kg: 40, amount: 8, effort: 'easy', done: true },
-      { exercise: 'Barbell back squat', set_no: 2, kg: null, amount: 6, effort: null, done: true },
+      { exercise: 'Barbell back squat', set_no: 1, kg: 40, amount: 8, effort: 'easy', rir: null, done: true },
+      { exercise: 'Barbell back squat', set_no: 2, kg: null, amount: 6, effort: null, rir: null, done: true },
     ]);
   });
 
@@ -146,9 +147,9 @@ describe('home deload', () => {
     draft.ticks = { 'Push-ups': [2, 1], Plank: [1] };
     const sets = toPayload(withDeloadRows(draft, routine)).sets;
     expect(sets).toEqual([
-      { exercise: 'Push-ups', set_no: 1, kg: null, amount: 10, effort: null, done: true },
-      { exercise: 'Push-ups', set_no: 2, kg: null, amount: 10, effort: null, done: true },
-      { exercise: 'Plank', set_no: 1, kg: null, amount: 45, effort: null, done: true },
+      { exercise: 'Push-ups', set_no: 1, kg: null, amount: 10, effort: null, rir: null, done: true },
+      { exercise: 'Push-ups', set_no: 2, kg: null, amount: 10, effort: null, rir: null, done: true },
+      { exercise: 'Plank', set_no: 1, kg: null, amount: 45, effort: null, rir: null, done: true },
     ]);
   });
 });
@@ -156,7 +157,7 @@ describe('home deload', () => {
 describe('summary read and day status', () => {
   it('reads the effort split', () => {
     expect(effortRead({ easy: 7, right: 4, hard: 1, unrated: 0 }).text).toBe(
-      "Most sets felt easy. There's room to go heavier.",
+      "Most sets had 3+ reps left. There's room to go heavier.",
     );
     expect(effortRead({ easy: 1, right: 1, hard: 3, unrated: 0 }).tone).toBe('hold');
     expect(effortRead({ easy: 0, right: 0, hard: 0, unrated: 12 }).tone).toBe('accent');
@@ -264,15 +265,15 @@ describe('per-side exercises', () => {
     d.rows['Side plank'][1] = { kg: '', reps: '35', done: true, effort: 'hard', side: 'R' };
     d.rows['Side plank'][3] = { kg: '', reps: '36', done: true, effort: null, side: 'R' };
     expect(toPayload(d).sets).toEqual([
-      { exercise: 'Side plank', set_no: 1, side: 'L', kg: null, amount: 38, effort: 'right', done: true },
-      { exercise: 'Side plank', set_no: 1, side: 'R', kg: null, amount: 35, effort: 'hard', done: true },
-      { exercise: 'Side plank', set_no: 2, side: 'R', kg: null, amount: 36, effort: null, done: true },
+      { exercise: 'Side plank', set_no: 1, side: 'L', kg: null, amount: 38, effort: 'right', rir: null, done: true },
+      { exercise: 'Side plank', set_no: 1, side: 'R', kg: null, amount: 35, effort: 'hard', rir: null, done: true },
+      { exercise: 'Side plank', set_no: 2, side: 'R', kg: null, amount: 36, effort: null, rir: null, done: true },
     ]);
   });
 
   it('round-trip into their L/R slots', () => {
     const d = draft();
-    d.rows['Side plank'][3] = { kg: '', reps: '36', done: true, effort: 'hard', side: 'R' };
+    d.rows['Side plank'][3] = { kg: '', reps: '36', done: true, effort: 'hard', rir: null, side: 'R' };
     const back = fromSession(toSession(d), routine);
     expect(back.rows['Side plank']).toEqual(d.rows['Side plank']);
   });
@@ -325,5 +326,52 @@ describe('dumbbell pairs', () => {
     const pairLibrary = { 'Hammer curls': { type: 'load' as const, increment_kg: 2.5, pair: true, form_url: null } };
     expect(summarise(session, pairLibrary).totalKg).toBe(150);
     expect(summarise(session, { 'Hammer curls': { ...pairLibrary['Hammer curls'], pair: false } }).totalKg).toBe(75);
+  });
+});
+
+describe('reps in reserve and warm-ups', () => {
+  it('save, reload and feed the add-weight rule', () => {
+    const d = logged6Oct();
+    d.rows['Barbell back squat'] = [
+      { kg: '20', reps: '10', done: true, effort: null, rir: null, warmup: true },
+      { kg: '40', reps: '8', done: true, effort: null, rir: 2 },
+      { kg: '40', reps: '8', done: true, effort: null, rir: 1 },
+      { kg: '40', reps: '8', done: true, effort: null, rir: 0 },
+    ];
+    const sets = toPayload(d).sets.filter((x) => x.exercise === 'Barbell back squat');
+    expect(sets.map((x) => [x.rir, !!x.warmup])).toEqual([
+      [null, true],
+      [2, false],
+      [1, false],
+      [0, false],
+    ]);
+    const back = fromSession(toSession(d), routineFor(block, '2026-10-06'));
+    expect(back.rows['Barbell back squat']).toEqual(d.rows['Barbell back squat']);
+
+    const history = historyFor('Barbell back squat', '2026-10-13', [toSession(d)], []);
+    expect(history[0].sets[0]).toMatchObject({ kg: 20, warmup: true });
+    const routine = routineFor(block, '2026-10-13')!;
+    const item = routine.items!.find((i) => i.exercise === 'Barbell back squat')!;
+    // Warm-up ignored; one set to failure at the top of 6-8 still moves up.
+    expect(callFor({ program: block, item, info: library['Barbell back squat'], history }).call).toBe('up');
+  });
+
+  it('counts working sets by reps left and warm-ups apart', () => {
+    const d = logged6Oct();
+    d.rows['Barbell back squat'] = [
+      { kg: '20', reps: '10', done: true, effort: null, rir: null, warmup: true },
+      { kg: '40', reps: '8', done: true, effort: null, rir: 3 },
+      { kg: '40', reps: '8', done: true, effort: 'hard', rir: null },
+      { kg: '40', reps: '8', done: true, effort: null, rir: 1 },
+    ];
+    const summary = summarise(toSession(d), library);
+    expect(summary.warmups).toBe(1);
+    expect(summary.effort).toMatchObject({ easy: 1, right: 1, hard: 1 });
+  });
+
+  it('labels the weight column for assisted and paired exercises', () => {
+    expect(kgLabels({ type: 'assisted', increment_kg: 0, form_url: null }).header).toBe('Help kg');
+    expect(kgLabels({ type: 'load', increment_kg: 2.5, pair: true, form_url: null }).header).toBe('kg each');
+    expect(kgLabels({ type: 'load', increment_kg: 5, form_url: null }).header).toBe('kg');
   });
 });

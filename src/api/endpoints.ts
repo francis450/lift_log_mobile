@@ -3,6 +3,9 @@ import type {
   Checkin,
   CheckinGetResponse,
   CheckinPayload,
+  DailyGetResponse,
+  DailyLog,
+  DailyLogPayload,
   EstimateResponse,
   PlanChange,
   ProgressSummary,
@@ -164,4 +167,13 @@ export function planChanges(credentials: Credentials, week: number) {
 
 export function foodMonth(credentials: Credentials, month: string) {
   return apiCall<FoodMonthDay[]>('GET', 'food.month', { month }, { credentials });
+}
+
+export function getDaily(credentials: Credentials, date: string) {
+  return apiCall<DailyGetResponse>('GET', 'daily.get', { date }, { credentials });
+}
+
+/** Fields left out keep their stored value, so morning weight and evening steps save separately. */
+export function saveDaily(credentials: Credentials, payload: DailyLogPayload) {
+  return apiCall<DailyLog>('POST', 'daily.save', payload as unknown as Record<string, unknown>, { credentials });
 }

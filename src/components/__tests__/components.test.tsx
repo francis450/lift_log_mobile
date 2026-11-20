@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 
-import { EffortPicker } from '../EffortPicker';
 import { Meter, meterCaption } from '../Meter';
+import { SetRating } from '../SetRating';
 import { Toggle } from '../Toggle';
 import { WeekStrip } from '../WeekStrip';
 
@@ -42,14 +42,23 @@ describe('Toggle', () => {
   });
 });
 
-describe('EffortPicker', () => {
-  it('selects, and clears on a second tap', async () => {
-    const onChange = jest.fn();
-    const { rerender } = await render(<EffortPicker value={null} onChange={onChange} />);
-    await fireEvent.press(screen.getByLabelText('Easy: 3 or more reps left'));
-    expect(onChange).toHaveBeenLastCalledWith('easy');
-    await rerender(<EffortPicker value="easy" onChange={onChange} />);
-    await fireEvent.press(screen.getByLabelText('Easy: 3 or more reps left'));
-    expect(onChange).toHaveBeenLastCalledWith(null);
+describe('SetRating', () => {
+  it('picks reps left, and clears on a second tap', async () => {
+    const onRir = jest.fn();
+    const { rerender } = await render(<SetRating rir={null} warmup={false} onRir={onRir} onWarmup={jest.fn()} />);
+    await fireEvent.press(screen.getByLabelText('Reps left 2: 2 more reps left'));
+    expect(onRir).toHaveBeenLastCalledWith(2);
+    await rerender(<SetRating rir={2} warmup={false} onRir={onRir} onWarmup={jest.fn()} />);
+    await fireEvent.press(screen.getByLabelText('Reps left 2: 2 more reps left'));
+    expect(onRir).toHaveBeenLastCalledWith(null);
+  });
+
+  it('hides the numbers on a warm-up', async () => {
+    const onWarmup = jest.fn();
+    const { rerender } = await render(<SetRating rir={null} warmup={false} onRir={jest.fn()} onWarmup={onWarmup} />);
+    await fireEvent.press(screen.getByLabelText('Warm-up set'));
+    expect(onWarmup).toHaveBeenLastCalledWith(true);
+    await rerender(<SetRating rir={null} warmup onRir={jest.fn()} onWarmup={onWarmup} />);
+    expect(screen.queryByLabelText('Reps left 0: nothing left, or missed a rep')).toBeNull();
   });
 });

@@ -27,4 +27,5 @@ export const MEASURE_RULES = {
   weight: { min: 25, max: 400, label: 'weight', unit: 'kg', required: true },
   waist: { min: 40, max: 200, label: 'waist', unit: 'cm' },
   forearm: { min: 15, max: 60, label: 'forearm', unit: 'cm' },
+  hips: { min: 50, max: 200, label: 'hips', unit: 'cm' },
 };

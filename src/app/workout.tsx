@@ -225,7 +225,8 @@ export default function WorkoutScreen() {
           placeholders={w.placeholders[item.exercise] ?? []}
           onChangeRow={(i, patch) => w.setRow(item.exercise, i, patch)}
           onToggleDone={(i) => w.toggleDone(item, i)}
-          onEffort={(i, effort) => w.setEffort(item.exercise, i, effort)}
+          onRir={(i, rir) => w.setRir(item.exercise, i, rir)}
+          onWarmup={(i, warmup) => w.setWarmup(item.exercise, i, warmup)}
           onAddSet={() => w.addSet(item.exercise)}
         />
 

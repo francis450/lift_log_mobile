@@ -1,4 +1,4 @@
-// State for one workout. Every change is saved on the phone at once; meaningful steps (tick, effort,
+// State for one workout. Every change is saved on the phone at once; meaningful steps (tick, reps left,
 // next exercise, note, finish) are also queued for the server.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -7,7 +7,7 @@ import * as api from '@/api/endpoints';
 import type { RoutineItem } from '@/api/types';
 import { useProfile } from '@/hooks/queries';
 import { formatNumber } from '@/lib/numbers';
-import { Effort, NextCall, parseRepRange } from '@/lib/nextCall';
+import { NextCall, parseRepRange } from '@/lib/nextCall';
 import { restSeconds, routineFor, weekFor } from '@/lib/program';
 import { reviewDelta } from '@/lib/review';
 import { usePlanChanges } from '@/review/data';
@@ -167,6 +167,7 @@ export function useWorkout(date: string, from?: string) {
           // Ticking an empty set takes the placeholder (last time's reps) as what was done.
           reps: done && !row.reps ? (placeholders[item.exercise]?.[index] ?? '') : row.reps,
           effort: done ? row.effort : null,
+          rir: done ? row.rir : null,
         };
         return {
           ...d,
@@ -177,8 +178,16 @@ export function useWorkout(date: string, from?: string) {
     [update, placeholders],
   );
 
-  const setEffort = useCallback(
-    (exercise: string, index: number, effort: Effort | null) => setRow(exercise, index, { effort }, true),
+  /** Reps in reserve for a done set (0-4). Clearing it also clears an old effort rating. */
+  const setRir = useCallback(
+    (exercise: string, index: number, rir: number | null) => setRow(exercise, index, { rir, effort: null }, true),
+    [setRow],
+  );
+
+  /** Mark a set as a warm-up (or back to a working set). Warm-ups need no reps-in-reserve rating. */
+  const setWarmup = useCallback(
+    (exercise: string, index: number, warmup: boolean) =>
+      setRow(exercise, index, warmup ? { warmup: true, rir: null, effort: null } : { warmup: false }, true),
     [setRow],
   );
 
@@ -256,7 +265,8 @@ export function useWorkout(date: string, from?: string) {
     placeholders,
     setRow,
     toggleDone,
-    setEffort,
+    setRir,
+    setWarmup,
     addSet,
     goTo,
     setNote,

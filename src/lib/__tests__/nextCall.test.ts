@@ -10,14 +10,17 @@ import {
   RuleTarget,
 } from '../nextCall';
 
-type RawSet = [number | null, number, string | null] | [number | null, number, string | null, 'L' | 'R', number];
+type RawSet =
+  | [number | null, number, string | null]
+  | [number | null, number, string | null, 'L' | 'R', number]
+  | { kg: number | null; amount: number; rir?: number | null; warmup?: boolean; side?: 'L' | 'R'; set_no?: number };
 interface RawCase {
   name: string;
   exercise: string;
   target: RuleTarget;
   reviewDeltaKg?: number;
   history: { date: string; deload?: boolean; sets: RawSet[] }[];
-  expect: { call: string; kg?: number; reason: string };
+  expect: { call: string; kg?: number; reason: string; assist?: true };
 }
 
 const exercises = table.exercises as Record<string, RuleExercise>;
@@ -26,15 +29,19 @@ function history(raw: RawCase['history']): RuleSession[] {
   return raw.map((s) => ({
     date: s.date,
     deload: s.deload,
-    sets: s.sets.map(([kg, amount, effort, side, set_no]) => ({ kg, amount, effort: effort as Effort | null, side, set_no })),
+    sets: s.sets.map((raw) => {
+      if (!Array.isArray(raw)) return { ...raw };
+      const [kg, amount, effort, side, set_no] = raw;
+      return { kg, amount, effort: effort as Effort | null, side, set_no };
+    }),
   }));
 }
 
 describe('nextCall (shared table)', () => {
   const cases = table.cases as RawCase[];
 
-  it('covers at least 15 cases', () => {
-    expect(cases.length).toBeGreaterThanOrEqual(15);
+  it('covers at least 40 cases', () => {
+    expect(cases.length).toBeGreaterThanOrEqual(40);
   });
 
   it.each(cases.map((c) => [c.name, c] as const))('%s', (_name, c) => {
@@ -56,6 +63,14 @@ describe('display', () => {
       'First session: pick a weight you can do with clean form',
     );
     expect(callSentence({ call: 'bodyweight', reason: 'Beat last time: 12, 11' })).toBe('Beat last time: 12, 11');
+  });
+
+  it('labels assisted calls as help', () => {
+    expect(callLabel({ call: 'up', kg: 25, reason: '', assist: true })).toBe('Less help: 25 kg');
+    expect(callLabel({ call: 'up', reason: '', assist: true })).toBe('Less help');
+    expect(callLabel({ call: 'down', kg: 35, reason: '', assist: true })).toBe('More help: 35 kg');
+    expect(callLabel({ call: 'hold', kg: 30, reason: '', assist: true })).toBe('Stay 30 kg help');
+    expect(callLabel({ call: 'hold', kg: 0, reason: '', assist: true })).toBe('No help');
   });
 
   it('parses rep targets', () => {

@@ -57,9 +57,12 @@ export function makeEntry(params: {
   qty: number;
   source: FoodSource;
   now: Date;
+  /** Kitchen-scale weight, when weighed. */
+  grams?: number | null;
 }): FoodEntry {
-  const { meal, item, qty, source, now } = params;
+  const { meal, item, qty, source, now, grams } = params;
   return {
+    ...(grams ? { grams } : {}),
     client_id: newClientId(),
     meal,
     food_name: item.food_name.trim(),
@@ -80,8 +83,32 @@ export function withoutEntry(day: FoodDay, clientId: string): FoodDay {
   return { ...day, entries: day.entries.filter((e) => e.client_id !== clientId) };
 }
 
-export function withQty(day: FoodDay, clientId: string, qty: number): FoodDay {
-  return { ...day, entries: day.entries.map((e) => (e.client_id === clientId ? { ...e, qty } : e)) };
+/** New amount for an entry; a weighed entry also takes its new weight. */
+export function withQty(day: FoodDay, clientId: string, qty: number, grams?: number | null): FoodDay {
+  return {
+    ...day,
+    entries: day.entries.map((e) => (e.client_id === clientId ? { ...e, qty, ...(grams ? { grams } : {}) } : e)),
+  };
+}
+
+/** Portions from a scale weight: 235 g of a 100 g portion is 2.35. Two decimals. */
+export function qtyFromGrams(grams: number, gramsPerPortion: number): number {
+  return Math.round((grams / gramsPerPortion) * 100) / 100;
+}
+
+/** Grams in one portion of a weighed entry (grams / qty), else null. */
+export function entryGramsPerPortion(e: Pick<FoodEntry, 'grams' | 'qty'>): number | null {
+  return e.grams && e.qty ? Math.round((e.grams / e.qty) * 10) / 10 : null;
+}
+
+/** "235 g" for a weighed entry, else "× 2". */
+export function entryAmount(e: Pick<FoodEntry, 'grams' | 'qty'>): string {
+  return e.grams ? `${Math.round(e.grams)} g` : formatQty(e.qty);
+}
+
+/** Mark the day as fully logged (or not). Only complete days count in the weekly averages. */
+export function withComplete(day: FoodDay, complete: boolean): FoodDay {
+  return { ...day, complete };
 }
 
 /** − / + in 0.5 steps, never below 0.5. */
@@ -152,7 +179,15 @@ export function recentFromDays(days: FoodDay[]): FoodItem[] {
     const key = `${e.food_name.toLowerCase()}|${e.portion.toLowerCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ name: null, food_name: e.food_name, portion: e.portion, kcal: e.kcal_per_portion, protein_g: e.protein_per_portion });
+    const gpp = entryGramsPerPortion(e);
+    out.push({
+      name: null,
+      food_name: e.food_name,
+      portion: e.portion,
+      kcal: e.kcal_per_portion,
+      protein_g: e.protein_per_portion,
+      ...(gpp ? { grams_per_portion: gpp } : {}),
+    });
   }
   return out;
 }
