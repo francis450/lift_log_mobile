@@ -1,7 +1,12 @@
 // The add-weight rule (docs/01, "Add-weight rule"). One pure function; every branch is unit-tested.
 // The server's weekly review ports the same rule to Python and shares this test table (M7).
+//
+// Since Block 3 the rule judges working sets only (warm-ups are skipped), reads effort as reps in
+// reserve (RIR 0-4), and handles assisted exercises, where the logged kg is the machine's help and
+// less help is progress.
 
-export type ExerciseType = 'load' | 'bodyweight' | 'time' | 'distance';
+export type ExerciseType = 'load' | 'bodyweight' | 'time' | 'distance' | 'assisted';
+/** The old three-button effort scale. Still read for sets logged before RIR. */
 export type Effort = 'easy' | 'right' | 'hard';
 export type CallKind = 'up' | 'hold' | 'down' | 'start' | 'test' | 'bodyweight';
 
@@ -24,7 +29,12 @@ export interface RuleTarget {
 export interface RuleSet {
   kg: number | null;
   amount: number;
-  effort: Effort | null;
+  /** Legacy rating; `rir` wins when both are set. */
+  effort?: Effort | null;
+  /** Reps in reserve: 0 = nothing left, 4 = four or more left. */
+  rir?: number | null;
+  /** Warm-up sets never count. */
+  warmup?: boolean;
   /** Per-side exercises log each set as an L and an R entry sharing a set_no. */
   side?: 'L' | 'R' | null;
   set_no?: number;
@@ -42,6 +52,8 @@ export interface NextCall {
   call: CallKind;
   kg?: number;
   reason: string;
+  /** Set on assisted exercises: kg is the machine's help, so "up" means less help. */
+  assist?: true;
 }
 
 export interface RuleOptions {
@@ -63,8 +75,36 @@ function topKg(session: RuleSession): number {
   return Math.max(0, ...session.sets.map((s) => s.kg ?? 0));
 }
 
+/**
+ * The working weight: the kg used for the most sets. A tie goes to the harder weight
+ * (heavier, or for assisted exercises the one with less help), so one top set plus
+ * back-off sets is judged on the back-off sets.
+ */
+export function workingKg(session: RuleSession, assisted = false): number {
+  const counts = new Map<number, number>();
+  for (const s of session.sets) counts.set(s.kg ?? 0, (counts.get(s.kg ?? 0) ?? 0) + 1);
+  let best = 0;
+  let bestCount = -1;
+  for (const [kg, count] of counts) {
+    const harder = assisted ? kg < best : kg > best;
+    if (count > bestCount || (count === bestCount && harder)) {
+      best = kg;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
 function workSets(session: RuleSession, kg: number): RuleSet[] {
   return session.sets.filter((s) => (s.kg ?? 0) === kg);
+}
+
+const LEGACY_RIR: Record<Effort, number> = { easy: 3, right: 1, hard: 0 };
+
+/** Reps in reserve for a set: the logged RIR, else the old effort read as easy 3, right 1, hard 0. */
+export function rirOf(s: Pick<RuleSet, 'rir' | 'effort'>): number | null {
+  if (s.rir !== null && s.rir !== undefined) return s.rir;
+  return s.effort ? LEGACY_RIR[s.effort] : null;
 }
 
 function fmt(n: number): string {
@@ -72,7 +112,7 @@ function fmt(n: number): string {
 }
 
 /** The next weight the equipment has: the smallest multiple of inc above w. */
-function stepUp(w: number, inc: number): number {
+export function stepUp(w: number, inc: number): number {
   if (inc <= 0) return round2(w);
   return round2((Math.floor(w / inc + 1e-9) + 1) * inc);
 }
@@ -93,11 +133,9 @@ export function bigStep(w: number, inc: number): boolean {
   return w > 0 && inc > w * 0.1;
 }
 
-const EFFORT_RANK: Record<Effort, number> = { easy: 1, right: 2, hard: 3 };
-
 /**
  * Per-side sets (side L and R sharing a set_no) become one set judged on the weaker side:
- * the lower kg, the lower amount and the harder effort. Sets without a side pass through.
+ * the lower kg, the lower amount and the fewer reps in reserve. Sets without a side pass through.
  */
 export function weakerSide(sets: RuleSet[]): RuleSet[] {
   const out: RuleSet[] = [];
@@ -109,15 +147,15 @@ export function weakerSide(sets: RuleSet[]): RuleSet[] {
     }
     const pair = bySetNo.get(s.set_no);
     if (!pair) {
-      const first: RuleSet = { kg: s.kg, amount: s.amount, effort: s.effort };
+      const first: RuleSet = { kg: s.kg, amount: s.amount, rir: rirOf(s) };
       bySetNo.set(s.set_no, first);
       out.push(first);
       continue;
     }
     if (s.kg !== null) pair.kg = pair.kg === null ? s.kg : Math.min(pair.kg, s.kg);
     pair.amount = Math.min(pair.amount, s.amount);
-    const efforts = [pair.effort, s.effort].filter((e): e is Effort => !!e);
-    pair.effort = efforts.length ? efforts.reduce((a, b) => (EFFORT_RANK[b] > EFFORT_RANK[a] ? b : a)) : null;
+    const rirs = [pair.rir, rirOf(s)].filter((r): r is number => r !== null && r !== undefined);
+    pair.rir = rirs.length ? Math.min(...rirs) : null;
   }
   return out;
 }
@@ -132,10 +170,11 @@ export function nextCall(
   history: RuleSession[],
   options: RuleOptions = {},
 ): NextCall {
-  const isGym = exercise.type === 'load' || exercise.type === 'distance';
+  const isGym = exercise.type === 'load' || exercise.type === 'distance' || exercise.type === 'assisted';
   const sessions = history
-    .filter((s) => s.sets.length > 0 && !(isGym && s.deload))
-    .map((s) => ({ ...s, sets: weakerSide(s.sets) }));
+    .filter((s) => !(isGym && s.deload))
+    .map((s) => ({ ...s, sets: weakerSide(s.sets.filter((x) => !x.warmup)) }))
+    .filter((s) => s.sets.length > 0);
 
   // 1. Test routine.
   if (target.test) {
@@ -158,7 +197,8 @@ export function nextCall(
   const result = weightCall(exercise, target, range, sessions);
   const delta = options.reviewDeltaKg ?? 0;
   if (delta && result.kg !== undefined) {
-    return { call: result.call, kg: Math.max(snap(result.kg + delta, exercise.increment_kg), 0), reason: 'From your weekly review' };
+    const kg = Math.max(snap(result.kg + delta, exercise.increment_kg), 0);
+    return { ...result, kg, reason: 'From your weekly review' };
   }
   return result;
 }
@@ -169,60 +209,99 @@ function weightCall(
   [a, b]: [number, number],
   sessions: RuleSession[],
 ): NextCall {
+  const assisted = exercise.type === 'assisted';
+  const tag = (call: NextCall): NextCall => (assisted ? { ...call, assist: true } : call);
+
   // 3. No history.
   if (!sessions.length) {
-    return target.startingKg
-      ? { call: 'start', kg: target.startingKg, reason: `Start around ${fmt(target.startingKg)} kg` }
-      : { call: 'start', reason: 'Pick a weight you can do with clean form' };
+    if (target.startingKg) {
+      return tag({ call: 'start', kg: target.startingKg, reason: `Start around ${fmt(target.startingKg)} kg` });
+    }
+    return tag({
+      call: 'start',
+      reason: assisted ? 'Pick the help that lets you do clean reps' : 'Pick a weight you can do with clean form',
+    });
   }
 
   const inc = exercise.increment_kg;
-  const last = sessions[0];
-  const w = topKg(last);
-  const work = workSets(last, w);
+  const w = workingKg(sessions[0], assisted);
+  const work = workSets(sessions[0], w);
+  // Harder means more kg, or for assisted exercises less help.
+  const harder = (kg: number) => (assisted ? stepDown(kg, inc) : stepUp(kg, inc));
+  const easier = (kg: number) => (assisted ? stepUp(kg, inc) : stepDown(kg, inc));
+  // A jump of more than 10% needs reps to spare first (dumbbells 5 -> 7.5 kg, an empty bar 20 -> 25 kg).
+  const big = exercise.type === 'load' && bigStep(w, stepUp(w, inc) - w);
+  const need = big ? b + 2 : b;
+  const zeros = (sets: RuleSet[]) => sets.filter((x) => rirOf(x) === 0).length;
 
-  // 4. Every work set at the top of the range.
-  if (work.length >= target.sets && work.every((s) => s.amount >= b)) {
-    return { call: 'up', kg: stepUp(w, inc), reason: 'Hit the top of the range' };
+  // 4. Every working set at the top of the range (+2 reps before a big jump), with at most one set to failure.
+  if (work.length >= target.sets && work.every((s) => s.amount >= need) && zeros(work) <= 1) {
+    if (assisted && w === 0) return tag({ call: 'hold', kg: 0, reason: 'No help needed: beat your reps' });
+    if (assisted && inc <= 0) return tag({ call: 'up', reason: 'Hit the top of the range: take one step less help' });
+    return tag({
+      call: 'up',
+      kg: harder(w),
+      reason: big ? 'Hit the top of the range with reps to spare' : 'Hit the top of the range',
+    });
   }
 
-  // The last two sessions at this weight.
-  const atW = sessions.filter((s) => topKg(s) === w).slice(0, 2);
-  if (atW.length === 2) {
-    // 5 is skipped on a big step: stay and build reps to the top of the range first.
-    const big = bigStep(w, inc);
-    // 5. Felt easy two sessions running.
-    const easy = atW.every((s) => {
+  // The last sessions at this working weight.
+  const atW = sessions.filter((s) => workingKg(s, assisted) === w);
+  if (atW.length >= 2) {
+    const lastTwo = atW.slice(0, 2);
+    // 5. Felt easy (3+ reps in reserve) two sessions running. Skipped on a big step.
+    const easy = lastTwo.every((s) => {
       const sets = workSets(s, w);
-      const easyCount = sets.filter((x) => x.effort === 'easy').length;
-      return (
-        sets.length > 0 &&
-        sets.every((x) => x.amount >= a) &&
-        easyCount * 3 >= sets.length * 2 &&
-        !sets.some((x) => x.effort === 'hard')
-      );
+      const easyCount = sets.filter((x) => (rirOf(x) ?? -1) >= 3).length;
+      return sets.length > 0 && sets.every((x) => x.amount >= a) && easyCount * 3 >= sets.length * 2 && zeros(sets) === 0;
     });
-    if (!big && easy) return { call: 'up', kg: stepUp(w, inc), reason: 'Felt easy two sessions running' };
+    if (!big && easy && !(assisted && (w === 0 || inc <= 0))) {
+      return tag({ call: 'up', kg: harder(w), reason: 'Felt easy two sessions running' });
+    }
 
-    // 6. Struggling two sessions running.
-    const hard = atW.every((s) => {
+    // 6. Struggling two sessions running: half the sets to failure and half short of the range.
+    const hard = lastTwo.every((s) => {
       const sets = workSets(s, w);
-      const hardCount = sets.filter((x) => x.effort === 'hard').length;
       const shortCount = sets.filter((x) => x.amount < a).length;
-      return sets.length > 0 && hardCount * 2 >= sets.length && shortCount * 2 >= sets.length;
+      return sets.length > 0 && zeros(sets) * 2 >= sets.length && shortCount * 2 >= sets.length;
     });
-    if (hard) {
-      return { call: 'down', kg: stepDown(w, inc), reason: 'Two hard sessions: drop a step and rebuild' };
+    if (hard && !(assisted && inc <= 0)) {
+      return tag({ call: 'down', kg: easier(w), reason: 'Two hard sessions: drop a step and rebuild' });
     }
   }
 
-  // 7. Otherwise hold.
-  return { call: 'hold', kg: w, reason: 'Beat your reps' };
+  // 7. Stalled: three sessions running at this weight without adding a rep.
+  const runAtW: RuleSession[] = [];
+  for (const s of sessions) {
+    if (workingKg(s, assisted) !== w) break;
+    runAtW.push(s);
+  }
+  const full = (s: RuleSession) => workSets(s, w).length >= target.sets;
+  if (runAtW.length >= 3 && full(runAtW[0]) && full(runAtW[2])) {
+    const reps = (s: RuleSession) =>
+      workSets(s, w)
+        .slice(0, target.sets)
+        .reduce((sum, x) => sum + x.amount, 0);
+    if (reps(runAtW[0]) <= reps(runAtW[2])) {
+      if (big || (assisted && inc <= 0) || easier(w) === w) {
+        return tag({ call: 'hold', kg: w, reason: 'No progress in 3 sessions: rest 3 min and check sleep and food' });
+      }
+      return tag({ call: 'down', kg: easier(w), reason: 'No progress in 3 sessions: drop a step and rebuild' });
+    }
+  }
+
+  // 8. Otherwise hold.
+  return tag({ call: 'hold', kg: w, reason: big ? `Build to ${fmt(need)} reps before moving up` : 'Beat your reps' });
 }
 
 /** Short chip label: "Up to 42.5 kg", "Stay 40 kg", "Start around 40 kg". */
 export function callLabel(call: NextCall): string {
   const kg = call.kg !== undefined ? `${fmt(call.kg)} kg` : '';
+  if (call.assist && (call.call === 'up' || call.call === 'hold' || call.call === 'down')) {
+    if (call.call === 'up') return kg ? `Less help: ${kg}` : 'Less help';
+    if (call.call === 'down') return `More help: ${kg}`;
+    return call.kg === 0 ? 'No help' : `Stay ${kg} help`;
+  }
   switch (call.call) {
     case 'up':
       return `Up to ${kg}`;

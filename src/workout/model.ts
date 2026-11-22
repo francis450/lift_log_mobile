@@ -13,7 +13,7 @@ import type {
   Side,
 } from '@/api/types';
 import { formatNumber, parseNumber } from '@/lib/numbers';
-import { Effort, nextCall, NextCall, parseRepRange, RuleSession } from '@/lib/nextCall';
+import { Effort, nextCall, NextCall, parseRepRange, rirOf, RuleSession } from '@/lib/nextCall';
 import { addDays } from '@/lib/dates';
 import { isDeload, isTraining, routineFor, weekFor } from '@/lib/program';
 
@@ -21,7 +21,12 @@ export interface DraftRow {
   kg: string;
   reps: string;
   done: boolean;
+  /** The old three-button rating, kept on sets logged before reps in reserve. */
   effort: Effort | null;
+  /** Reps in reserve: 0 = nothing left, 4 = four or more. Missing on drafts saved before RIR. */
+  rir?: number | null;
+  /** Warm-up sets are saved but the add-weight rule and the review skip them. */
+  warmup?: boolean;
   /** Per-side exercises: each set is an L row then an R row. */
   side?: Side;
 }
@@ -32,7 +37,7 @@ export function isPerSide(item: RoutineItem | undefined): boolean {
 }
 
 function emptyRows(perSide: boolean, sets: number, kg = ''): DraftRow[] {
-  const blank = (side?: Side): DraftRow => ({ kg, reps: '', done: false, effort: null, ...(side ? { side } : {}) });
+  const blank = (side?: Side): DraftRow => ({ kg, reps: '', done: false, effort: null, rir: null, ...(side ? { side } : {}) });
   return Array.from({ length: sets }, () => (perSide ? [blank('L'), blank('R')] : [blank()])).flat();
 }
 
@@ -82,7 +87,14 @@ export function exerciseInfo(library: Record<string, ExerciseInfo> | undefined, 
 }
 
 export function usesKg(info: ExerciseInfo): boolean {
-  return info.type === 'load' || info.type === 'distance';
+  return info.type === 'load' || info.type === 'distance' || info.type === 'assisted';
+}
+
+/** The weight column's short header and its field label. */
+export function kgLabels(info: ExerciseInfo): { header: string; field: string } {
+  if (info.type === 'assisted') return { header: 'Help kg', field: 'kg of help from the machine' };
+  if (info.pair) return { header: 'kg each', field: 'kg per dumbbell' };
+  return { header: 'kg', field: 'kg' };
 }
 
 /** "reps", "seconds" or "metres". */
@@ -169,6 +181,8 @@ export function toPayload(draft: WorkoutDraft): SessionPayload {
         kg: parseNumber(row.kg),
         amount,
         effort: row.effort,
+        rir: row.rir ?? null,
+        ...(row.warmup ? { warmup: true } : {}),
         done: row.done,
       };
       sets.push(row.side ? { ...entry, side: row.side } : entry);
@@ -208,7 +222,7 @@ export function fromSession(session: Session, routine: Routine | null): WorkoutD
     }
     rows[exercise] = logged.map(toDraftRow);
     const planned = item?.sets ?? 0;
-    while (rows[exercise].length < planned) rows[exercise].push({ kg: '', reps: '', done: false, effort: null });
+    while (rows[exercise].length < planned) rows[exercise].push({ kg: '', reps: '', done: false, effort: null, rir: null });
   }
   return {
     date: session.session_date,
@@ -228,7 +242,14 @@ export function fromSession(session: Session, routine: Routine | null): WorkoutD
 }
 
 function toDraftRow(s: SetEntry): DraftRow {
-  const row: DraftRow = { kg: formatNumber(s.kg), reps: formatNumber(s.amount), done: s.done, effort: s.effort };
+  const row: DraftRow = {
+    kg: formatNumber(s.kg),
+    reps: formatNumber(s.amount),
+    done: s.done,
+    effort: s.effort,
+    rir: s.rir ?? null,
+    ...(s.warmup ? { warmup: true } : {}),
+  };
   return s.side ? { ...row, side: s.side } : row;
 }
 
@@ -275,6 +296,8 @@ export function historyFor(
     kg: s.kg,
     amount: s.amount,
     effort: s.effort,
+    rir: s.rir ?? null,
+    ...(s.warmup ? { warmup: true } : {}),
     ...(s.side ? { side: s.side, set_no: s.set_no } : {}),
   });
   for (const item of server) {
@@ -323,35 +346,48 @@ export interface SessionSummary {
   durationMin: number | null;
   setsLogged: number;
   totalKg: number;
+  /** Working sets by reps in reserve: easy = 3+ left, right = 1-2 left, hard = 0 left. Warm-ups excluded. */
   effort: { easy: number; right: number; hard: number; unrated: number };
+  warmups: number;
 }
 
 /**
  * Duration, sets, total kg (kg x reps over load exercises, twice for a pair of dumbbells) and the
- * effort split. A per-side set counts as two entries: each side has its own reps and effort.
+ * split of working sets by reps in reserve (older sets by their effort rating). A per-side set
+ * counts as two entries: each side has its own reps and rating. Warm-ups are counted apart.
  */
 export function summarise(session: Session, library: Record<string, ExerciseInfo> | undefined): SessionSummary {
   const effort = { easy: 0, right: 0, hard: 0, unrated: 0 };
   let totalKg = 0;
+  let warmups = 0;
   for (const s of session.sets) {
-    if (s.effort) effort[s.effort] += 1;
-    else effort.unrated += 1;
+    if (s.warmup) {
+      warmups += 1;
+      continue;
+    }
+    const rir = rirOf(s);
+    if (rir === null) effort.unrated += 1;
+    else if (rir >= 3) effort.easy += 1;
+    else if (rir >= 1) effort.right += 1;
+    else effort.hard += 1;
     const info = exerciseInfo(library, s.exercise);
     if (info.type === 'load' && s.kg) totalKg += s.kg * s.amount * (info.pair ? 2 : 1);
   }
   const start = session.started_at ? Date.parse(session.started_at) : NaN;
   const end = session.finished_at ? Date.parse(session.finished_at) : NaN;
   const durationMin = Number.isFinite(start) && Number.isFinite(end) && end > start ? Math.round((end - start) / 60_000) : null;
-  return { durationMin, setsLogged: session.sets.length, totalKg: Math.round(totalKg), effort };
+  return { durationMin, setsLogged: session.sets.length, totalKg: Math.round(totalKg), effort, warmups };
 }
 
 /** One-line read of the effort split. */
 export function effortRead(effort: SessionSummary['effort']): { text: string; tone: 'up' | 'hold' | 'accent' } {
   const rated = effort.easy + effort.right + effort.hard;
-  if (!rated) return { text: 'No sets rated. Rate them Easy, Right or Hard to get earlier weight calls.', tone: 'accent' };
-  if (effort.easy * 2 >= rated) return { text: "Most sets felt easy. There's room to go heavier.", tone: 'up' };
-  if (effort.hard * 2 >= rated) return { text: 'Most sets felt hard. Hold the weight and build your reps.', tone: 'hold' };
-  return { text: 'Most sets felt about right. Keep building reps.', tone: 'accent' };
+  if (!rated) return { text: 'No sets rated. Tap reps left (0-4) after each set to get better weight calls.', tone: 'accent' };
+  if (effort.easy * 2 >= rated) return { text: "Most sets had 3+ reps left. There's room to go heavier.", tone: 'up' };
+  if (effort.hard * 2 >= rated) {
+    return { text: 'Most sets went to failure. Rest longer and stop 1-2 reps short.', tone: 'hold' };
+  }
+  return { text: 'Most sets stopped 1-2 reps short. Right where they should be.', tone: 'accent' };
 }
 
 /** Home deload: each ticked move in each round becomes a set at the target's first number. */
@@ -360,7 +396,13 @@ export function withDeloadRows(draft: WorkoutDraft, routine: Routine): WorkoutDr
   for (const item of routine.items ?? []) {
     const amount = parseRepRange(item.reps)?.[0];
     const rounds = [...(draft.ticks?.[item.exercise] ?? [])].sort();
-    rows[item.exercise] = rounds.map(() => ({ kg: '', reps: amount !== undefined ? String(amount) : '', done: true, effort: null }));
+    rows[item.exercise] = rounds.map(() => ({
+      kg: '',
+      reps: amount !== undefined ? String(amount) : '',
+      done: true,
+      effort: null,
+      rir: null,
+    }));
   }
   return { ...draft, rows };
 }

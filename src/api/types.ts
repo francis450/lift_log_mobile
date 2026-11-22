@@ -77,6 +77,7 @@ export interface Checkin {
   weight_kg: number | null;
   waist_cm: number | null;
   forearm_cm: number | null;
+  hips_cm?: number | null;
   sleep: number | null;
   energy: number | null;
   photo: string | null;
@@ -86,8 +87,8 @@ export interface CheckinGetResponse {
   week: number;
   checkin: Checkin | null;
   previous_weight_kg: number | null;
-  last_measured: { waist: string | null; forearm: string | null };
-  due: { waist: boolean; forearm: boolean };
+  last_measured: { waist: string | null; forearm: string | null; hips?: string | null };
+  due: { waist: boolean; forearm: boolean; hips?: boolean };
 }
 
 export interface CheckinPayload {
@@ -96,6 +97,7 @@ export interface CheckinPayload {
   weight_kg: number;
   waist_cm: number | null;
   forearm_cm: number | null;
+  hips_cm?: number | null;
   sleep: number | null;
   energy: number | null;
 }
@@ -118,8 +120,13 @@ export interface ReviewStats {
   targets: { kcal: number; protein_g: number };
   sessions: { planned: number; done: number; missed: string[]; items: unknown[] };
   effort: { easy: number; right: number; hard: number; unrated: number };
+  /** Working sets by reps in reserve. Missing on servers before the RIR update. */
+  rir?: Record<'0' | '1' | '2' | '3' | '4' | 'unrated', number>;
+  warmup_sets?: number;
   food: {
     days_logged: number;
+    complete_days?: number;
+    averages_from?: 'complete days' | 'all logged days';
     avg_kcal: number | null;
     avg_protein_g: number | null;
     protein_days_hit: number;
@@ -186,9 +193,10 @@ export interface SuggestResponse {
 }
 
 export interface ExerciseInfo {
-  type: 'load' | 'bodyweight' | 'time' | 'distance';
+  /** `assisted`: kg is the machine's help (counterweight), so less is progress. */
+  type: 'load' | 'bodyweight' | 'time' | 'distance' | 'assisted';
   equipment?: 'barbell' | 'dumbbell' | 'cable' | 'machine' | 'bodyweight' | null;
-  /** The equipment's weight step: suggested weights are always a multiple of it. */
+  /** The equipment's weight step: suggested weights are always a multiple of it. 0 = not known yet. */
   increment_kg: number;
   /** Two dumbbells at once: kg is logged per dumbbell and counted twice in total lifted. */
   pair?: boolean;
@@ -215,6 +223,7 @@ export interface FoodMonthDay {
   protein_g: number;
   entries: number;
   meals: number;
+  complete?: boolean;
 }
 
 export type Meal = 'breakfast' | 'lunch' | 'dinner' | 'snacks';
@@ -226,6 +235,8 @@ export interface FoodEntry {
   food_name: string;
   portion: string;
   qty: number;
+  /** Kitchen-scale weight, when the food was weighed. */
+  grams?: number | null;
   kcal_per_portion: number;
   protein_per_portion: number;
   source: FoodSource;
@@ -235,6 +246,8 @@ export interface FoodEntry {
 export interface FoodDay {
   food_date: string;
   client_updated_at: string | null;
+  /** Every meal of the day logged. Only complete days count in averages. */
+  complete?: boolean;
   entries: FoodEntry[];
 }
 
@@ -244,6 +257,8 @@ export interface FoodItem {
   portion: string;
   kcal: number;
   protein_g: number;
+  /** Grams in one portion, so the food can be logged by weight. */
+  grams_per_portion?: number | null;
 }
 
 export interface FoodSearchResult {
@@ -265,6 +280,8 @@ export interface HistoryItem {
     kg: number | null;
     amount: number;
     effort: 'easy' | 'right' | 'hard' | null;
+    rir?: number | null;
+    warmup?: boolean;
     done: boolean;
   }[];
 }
@@ -324,7 +341,11 @@ export interface SetEntry {
   side?: Side | null;
   kg: number | null;
   amount: number;
+  /** The old three-button rating; new sets use `rir`. */
   effort: 'easy' | 'right' | 'hard' | null;
+  /** Reps in reserve, 0 to 4 (4 = four or more). */
+  rir?: number | null;
+  warmup?: boolean;
   done: boolean;
 }
 
@@ -355,7 +376,10 @@ export interface TodayResponse {
   phase: string | null;
   routine: Routine | null;
   session: Session | null;
-  food: { kcal: number; protein_g: number; entries: number };
+  food: { kcal: number; protein_g: number; entries: number; complete?: boolean };
+  /** Missing on servers before the daily log. */
+  daily?: DailyLog | null;
+  weight_trend?: WeightTrend;
   targets: { kcal: number; protein_g: number | null };
   targets_note: string | null;
   week_strip: WeekStripDay[];
@@ -364,4 +388,43 @@ export interface TodayResponse {
     routine_name: string | null;
     highlight: Highlight | null;
   } | null;
+}
+
+/** One day of baseline data: morning weight, sleep, steps and pain. */
+export interface DailyLog {
+  log_date: string;
+  weight_kg: number | null;
+  sleep_hours: number | null;
+  steps: number | null;
+  /** 0 = no pain, 10 = worst imaginable; null = not logged. */
+  pain: number | null;
+  pain_area: string | null;
+  note: string;
+  client_updated_at: string | null;
+}
+
+/** As queued for daily.save: fields left out keep their stored value, '' clears one. */
+export interface DailyLogPayload {
+  log_date: string;
+  client_updated_at: string;
+  weight_kg?: number | '';
+  sleep_hours?: number | '';
+  steps?: number | '';
+  pain?: number | '';
+  pain_area?: string;
+  note?: string;
+}
+
+export interface WeightTrend {
+  /** Mean of the last 7 days' weigh-ins; null with fewer than 4. */
+  avg_7d_kg: number | null;
+  weigh_ins_7d: number;
+  previous_avg_7d_kg: number | null;
+  change_kg_per_week: number | null;
+  change_pct_per_week: number | null;
+}
+
+export interface DailyGetResponse {
+  log: DailyLog | null;
+  trend: WeightTrend;
 }

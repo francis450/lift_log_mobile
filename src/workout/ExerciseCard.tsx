@@ -6,12 +6,12 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { ExerciseInfo, RoutineItem } from '@/api/types';
 import { CallChip } from '@/components/CallChip';
 import { Card } from '@/components/Card';
-import { EffortPicker } from '@/components/EffortPicker';
+import { SetRating } from '@/components/SetRating';
 import { SetRow } from '@/components/SetRow';
-import { bigStep, callSentence, chipKind, Effort, NextCall } from '@/lib/nextCall';
+import { bigStep, callSentence, chipKind, NextCall, parseRepRange, rirOf, stepUp } from '@/lib/nextCall';
 import { colors, fonts, type } from '@/theme';
 
-import { amountUnit, DraftRow, setNumbers, targetLine, usesKg } from './model';
+import { amountUnit, DraftRow, kgLabels, setNumbers, targetLine, usesKg } from './model';
 
 interface Props {
   item: RoutineItem;
@@ -21,20 +21,35 @@ interface Props {
   placeholders: string[];
   onChangeRow: (index: number, patch: Partial<DraftRow>) => void;
   onToggleDone: (index: number) => void;
-  onEffort: (index: number, effort: Effort | null) => void;
+  onRir: (index: number, rir: number | null) => void;
+  onWarmup: (index: number, warmup: boolean) => void;
   onAddSet: () => void;
 }
 
 const HEADER: Record<string, string> = { reps: 'Reps', seconds: 'Secs', metres: 'Metres' };
 
-export function ExerciseCard({ item, info, call, rows, placeholders, onChangeRow, onToggleDone, onEffort, onAddSet }: Props) {
+export function ExerciseCard({
+  item,
+  info,
+  call,
+  rows,
+  placeholders,
+  onChangeRow,
+  onToggleDone,
+  onRir,
+  onWarmup,
+  onAddSet,
+}: Props) {
   const showKg = usesKg(info);
   const unit = amountUnit(info);
   const active = rows.findIndex((r) => !r.done);
   const numbers = setNumbers(rows);
   const sided = rows.some((r) => r.side);
-  // Same test as the add-weight rule: a step over 10% of the weight gets no early move.
-  const bigJump = call?.kg !== undefined && bigStep(call.kg, info.increment_kg);
+  const labels = kgLabels(info);
+  // Same test as the add-weight rule: a jump of over 10% needs 2 reps past the top of the range first.
+  const bigJump =
+    info.type === 'load' && call?.kg !== undefined && bigStep(call.kg, stepUp(call.kg, info.increment_kg) - call.kg);
+  const top = parseRepRange(item.reps)?.[1];
   return (
     <Card style={styles.card}>
       {item.finisher ? <Text style={[type.eyebrow, styles.finisher]}>Forearm finisher</Text> : null}
@@ -62,7 +77,7 @@ export function ExerciseCard({ item, info, call, rows, placeholders, onChangeRow
 
       <View style={styles.headerRow}>
         <Text style={[type.eyebrow, styles.setCol, sided && styles.setColSide]}>Set</Text>
-        {showKg ? <Text style={[type.eyebrow, styles.flex]}>{info.pair ? 'kg each' : 'kg'}</Text> : null}
+        {showKg ? <Text style={[type.eyebrow, styles.flex]}>{labels.header}</Text> : null}
         <Text style={[type.eyebrow, styles.flex]}>{HEADER[unit]}</Text>
         <View style={styles.tickCol} />
       </View>
@@ -72,7 +87,7 @@ export function ExerciseCard({ item, info, call, rows, placeholders, onChangeRow
           <SetRow
             setNo={numbers[i]}
             side={row.side}
-            kgLabel={info.pair ? 'kg per dumbbell' : 'kg'}
+            kgLabel={labels.field}
             kg={row.kg}
             reps={row.reps}
             repsPlaceholder={placeholders[i]}
@@ -86,16 +101,23 @@ export function ExerciseCard({ item, info, call, rows, placeholders, onChangeRow
           />
           {row.done ? (
             <View style={[styles.effort, sided && styles.effortSide]}>
-              <EffortPicker value={row.effort} onChange={(effort) => onEffort(i, effort)} />
+              <SetRating
+                rir={row.rir ?? rirOf(row)}
+                warmup={!!row.warmup}
+                onRir={(rir) => onRir(i, rir)}
+                onWarmup={(warmup) => onWarmup(i, warmup)}
+              />
             </View>
           ) : null}
         </Fragment>
       ))}
 
       <Text style={styles.legend}>
-        {bigJump
-          ? 'Easy: 3+ more reps left. Right: 1–2 left. Hard: nothing left. The next weight is a big jump, so reach the top of the range on every set first.'
-          : 'Easy: 3+ more reps left. Right: 1–2 left. Hard: nothing left. Two easy sessions in a row moves the weight up early.'}
+        {info.type === 'assisted'
+          ? 'Reps left: how many more clean reps you had. Log the machine\'s help in kg; less help is progress.'
+          : bigJump && top !== undefined
+            ? `Reps left: how many more clean reps you had. Aim for 1–3. The next weight is a big jump, so reach ${top + 2} reps on every set first. Mark warm-ups so they don't count.`
+            : 'Reps left: how many more clean reps you had. Aim for 1–3. Mark warm-ups so they don\'t count.'}
       </Text>
       <Pressable accessibilityRole="button" onPress={onAddSet} style={styles.addSet}>
         <Text style={styles.addSetText}>+ Add set</Text>

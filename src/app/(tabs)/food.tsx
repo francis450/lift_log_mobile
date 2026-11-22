@@ -8,6 +8,7 @@ import type { EstimateItem, FoodEntry, FoodSource, Meal } from '@/api/types';
 import { useSuggestion } from '@/food/suggestion';
 import { SuggestionCard } from '@/food/SuggestionCard';
 import { Card } from '@/components/Card';
+import { Toggle } from '@/components/Toggle';
 import { ExtendedFab } from '@/components/ExtendedFab';
 import { MealSection } from '@/components/MealSection';
 import { Meter } from '@/components/Meter';
@@ -20,9 +21,9 @@ import { AddFoodSheet, AddRequest } from '@/food/AddFoodSheet';
 import { saveCustomFood, updateFoodDay, useFoodDay, useFoodLibrary } from '@/food/data';
 import { EditEntrySheet } from '@/food/EditEntrySheet';
 import {
+  entryAmount,
   entryKcal,
   entryProtein,
-  formatQty,
   isDoubleAdd,
   LastAdd,
   makeEntry,
@@ -30,6 +31,7 @@ import {
   mealLabel,
   MEALS,
   totals,
+  withComplete,
   withEntry,
   withoutEntry,
   withQty,
@@ -84,7 +86,14 @@ function FoodDayScreen({ initialDate }: { initialDate: string }) {
   }
 
   function add(request: AddRequest) {
-    const entry = makeEntry({ meal: request.meal, item: request.item, qty: request.qty, source: request.source, now: new Date() });
+    const entry = makeEntry({
+      meal: request.meal,
+      item: request.item,
+      qty: request.qty,
+      grams: request.grams,
+      source: request.source,
+      now: new Date(),
+    });
     const commit = () => {
       lastAdd.current = { food_name: entry.food_name, portion: entry.portion, qty: entry.qty, meal: entry.meal, at: Date.now() };
       void updateFoodDay(date, (d) => withEntry(d, entry));
@@ -183,7 +192,7 @@ function FoodDayScreen({ initialDate }: { initialDate: string }) {
                       .map((e) => ({
                         key: e.client_id,
                         name: e.food_name,
-                        quantity: formatQty(e.qty),
+                        quantity: entryAmount(e),
                         kcal: entryKcal(e),
                         protein: entryProtein(e),
                       }))
@@ -193,6 +202,19 @@ function FoodDayScreen({ initialDate }: { initialDate: string }) {
           ))}
         </View>
         {day.entries.length ? <Text style={[type.secondary, styles.hint]}>Tap an item to change the amount or delete it.</Text> : null}
+        {day.entries.length ? (
+          <Card style={styles.complete}>
+            <View style={styles.flex}>
+              <Text style={type.bodyMedium}>Day complete</Text>
+              <Text style={type.secondary}>Every meal, drink, snack and cooking oil is logged. Only complete days count in your averages.</Text>
+            </View>
+            <Toggle
+              accessibilityLabel="Day complete"
+              value={!!day.complete}
+              onChange={(complete) => void updateFoodDay(date, (d) => withComplete(d, complete))}
+            />
+          </Card>
+        ) : null}
       </ScrollView>
 
       <ExtendedFab label="Add food" onPress={() => setAdding(true)} style={[styles.fab, { bottom: notice ? 76 : 16 }]} />
@@ -221,8 +243,8 @@ function FoodDayScreen({ initialDate }: { initialDate: string }) {
           entry={editing}
           onClose={() => setEditing(null)}
           onDelete={() => remove(editing)}
-          onSave={(qty) => {
-            void updateFoodDay(date, (d) => withQty(d, editing.client_id, qty));
+          onSave={(qty, grams) => {
+            void updateFoodDay(date, (d) => withQty(d, editing.client_id, qty, grams));
             setEditing(null);
           }}
         />
@@ -256,4 +278,6 @@ const styles = StyleSheet.create({
   fab: { position: 'absolute', right: 20 },
   snackbar: { position: 'absolute', left: 16, right: 16, bottom: 12 },
   hint: { paddingHorizontal: 4 },
+  complete: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  flex: { flex: 1, gap: 2 },
 });

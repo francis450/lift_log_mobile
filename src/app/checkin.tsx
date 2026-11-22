@@ -81,6 +81,7 @@ function CheckinForm({
   const [weight, setWeight] = useState(startWeight.toFixed(1));
   const [waist, setWaist] = useState(formatNumber(existing?.waist_cm));
   const [forearm, setForearm] = useState(formatNumber(existing?.forearm_cm));
+  const [hips, setHips] = useState(formatNumber(existing?.hips_cm));
   const [sleep, setSleep] = useState<number | null>(existing?.sleep ?? null);
   const [energy, setEnergy] = useState<number | null>(existing?.energy ?? null);
   const [photo, setPhoto] = useState<Photo | null>(null);
@@ -91,10 +92,12 @@ function CheckinForm({
   const w = parseNumber(weight);
   const wa = parseNumber(waist);
   const fa = parseNumber(forearm);
+  const hi = parseNumber(hips);
   const errors = {
     weight: checkRange(w, MEASURE_RULES.weight),
     waist: checkRange(wa, MEASURE_RULES.waist),
     forearm: checkRange(fa, MEASURE_RULES.forearm),
+    hips: checkRange(hi, MEASURE_RULES.hips),
   };
   const due = data.due.waist || data.due.forearm;
   const photoWeek = photoDue(week);
@@ -111,8 +114,17 @@ function CheckinForm({
 
   async function save() {
     setTouched(true);
-    if (errors.weight || errors.waist || errors.forearm || !credentials) return;
-    const payload: CheckinPayload = { week, checkin_date: date, weight_kg: w!, waist_cm: wa, forearm_cm: fa, sleep, energy };
+    if (errors.weight || errors.waist || errors.forearm || errors.hips || !credentials) return;
+    const payload: CheckinPayload = {
+      week,
+      checkin_date: date,
+      weight_kg: w!,
+      waist_cm: wa,
+      forearm_cm: fa,
+      hips_cm: hi,
+      sleep,
+      energy,
+    };
     setSaving(true);
     setError(null);
     try {
@@ -217,7 +229,19 @@ function CheckinForm({
                 error={touched ? errors.forearm : null}
               />
             </View>
-            <Text style={styles.note}>Every 2 weeks. Same arm each time.</Text>
+            <TextField
+              label="Hips (cm)"
+              variant="numeric"
+              value={hips}
+              onChangeText={setHips}
+              placeholder="widest point of the buttocks"
+              keyboardType="decimal-pad"
+              error={touched ? errors.hips : null}
+            />
+            <Text style={styles.note}>
+              Measure on bare skin, tape level and snug, after breathing out. Waist at the navel; forearm at its widest,
+              same arm each time; hips at the widest point.
+            </Text>
           </Card>
 
           <Card>
